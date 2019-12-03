@@ -1,0 +1,82 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This file takes as input individually downloaded blocker pilot isomir hits (downloaded separately for each sample) and combines them into one file.
+
+Sequence information is retained in this file.
+
+```{r}
+#This function reads in count data for specified file
+ReadCounts<- function (file) {
+  data<- read.table(paste(wd,file, sep = ''), sep = '\t', header = TRUE)
+  colnames(data)<- c("tracking_id", file)
+  return(data)
+}
+
+```
+
+
+```{r}
+wd<- "//Cifs2/rcdata$/Channing_miRNA_Blocker_Test/ChanningBlockerPilot_RProject/RawCounts/"
+
+files<- c("FilteredIsoHits.txt", paste("FilteredIsoHits (", 1:15, ").txt", sep =""))
+
+#read in all list of files using ReadFPKM
+data<-lapply(files, ReadCounts)
+
+#different isoforms in different samples. Need to get list of all isoforms present in all, have each sample have EACH of those isoforms listed, and set them to 0 if they weren't in the original file
+
+#get list of ALL isomir ids within each sample, combine into one unique list
+IDs<- c()
+for (x in 1:length(data)){
+  IDs<- c(IDs, as.character(data[[x]]$tracking_id))
+}
+IDs<- unique(unlist(IDs))
+IDs<- IDs[-1]
+
+#function that takes a count data frame as input (from one sample) and outputs a dataframe containing ALL ids within all samples. If the sample contains that ID, the count is set as the original value. If it doesn't contain that ID, it's set at 0.
+add_IDs<- function(x){
+  sum<-0
+  testIDs<- IDs
+  present<- testIDs %in% x$tracking_id
+  newdf<- data.frame(tracking_id=testIDs, counts<-0)
+  for (i in 1:length(present)){
+    miRNA<- testIDs[i]
+    if (present[i] == "TRUE"){
+      newdf[i,2]<- x[x$tracking_id==testIDs[i],2]
+    }
+  }
+  return(newdf)
+
+}
+
+#run the function above over the whole list of sample data frames
+data<- lapply(data, add_IDs)
+
+#Double check that the gene names are in the same order for all files. The cbind in the next portion assumes that they are!
+count = 0
+#In the list of dataframes, for data frames 2-24, check that the tracking_id (gene name) matches the tracking_id in the first data frame. 
+for (x in 2:length(data)) {
+  count = count + sum(data[[1]]$tracking_id==data[[x]]$tracking_id)
+}
+#divide by 15- count should be equal to the number of genes
+count=count/(length(data)-1) 
+count==length(data[[1]]$tracking_id)
+
+#bind all data frames together. NOTE: this assumes that all files have the same genes in the same order! Run the code in the previous section to double check this. Should not normally be an issue.
+m.data<- do.call(cbind, data)
+rownames(m.data)<- m.data$tracking_id
+
+#gets rid of unnecessary gene names. Left with just miRNA counts data with miRNA names as row name
+count.data<- m.data[,seq(from=2, to =ncol(m.data), by = 2)]
+
+#rename as correct samples
+colnames(count.data)<- c("B-760-0","B-570-0","B-190-0","B-760-1","B-570-1","B-380-1","A-760-0","A-570-0","A-190-0","A-760-1","A-570-1","A-380-1","D-190-0","D-570-1","C-190-0","C-570-1")
+
+count.data<- count.data[,order(colnames(count.data))]
+
+#write to csv for later use
+write.csv(count.data, paste(wd, "miRNA_isomirs_downloadedSeparately.csv", sep =""))
+```

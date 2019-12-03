@@ -1,0 +1,547 @@
+---
+title: "UKy miRNA: DESeq2 and RNASeq integration"
+output: html_notebook
+---
+
+#Running DESeq2 on miRNA data + using multiMiR to integrate with RNASeq data
+
+Here, the following input is used for DESeq2:
+
+isomirs --> remove seqs --> collapse together, adding counts together 
+
++                                                                              
+
+mature 
+
+
+Other filtering/combinations were tried (see miRNA_DESeq2_HitsIsomirsFamilies notebook), but this method was simple, gave good clustering, and treats all species the same, so we decided to use this method moving forward. Repeating here for the sake of completeness.
+
+#Libraries
+```{r}
+suppressPackageStartupMessages(library(DESeq2))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(pheatmap))
+suppressPackageStartupMessages(library(viridis))
+suppressPackageStartupMessages(library(multiMiR))
+```
+
+
+#Running DESeq2: first, filter/combine using the method described above
+
+
+Read in data- one file here, have already been combined into one after downloading separately for each sample
+```{r}
+wd<- "//Cifs2/rcdata$/UKRNASeq/miRNA/RawData/"
+MatureHits<- read.csv(paste(wd, "MaturemiRNA/miRNA_matureHits_downloadedSeparately.csv", sep =""))
+rownames(MatureHits)<- MatureHits$X
+MatureHits<- MatureHits[,-1]
+colnames(MatureHits)<- c(colnames(MatureHits)[1:23], "control.5")
+
+IsomirHits<- read.csv(paste(wd, "IsoHits/miRNA_isomirs_downloadedSeparately.csv", sep =""))
+rownames(IsomirHits)<- IsomirHits$X
+IsomirHits<- IsomirHits[,-1]
+```
+
+
+Filter data (collapsed isomirs added to whole list of mature)
+```{r}
+##################
+#Collapse isomirs#
+##################
+hits<- IsomirHits
+
+#get rid of any IDs that have 0 counts for all samples
+hits<- hits[rowSums(hits)>0,]
+hitsFinal<- hits
+
+hitsFinal$miRNA<- gsub(".*_", "",rownames(hitsFinal))
+
+df<- as_tibble(hitsFinal)
+df<-df%>% group_by(miRNA) %>% summarise_at(colnames(hits)[1:24],sum, na.rm=TRUE)
+hits<- as.data.frame(df)
+rownames(hits)<-hits$miRNA
+hits<- hits[,-1]
+
+
+#####################
+#Combine with mature#
+#####################
+
+#rbind with Mature hits
+FinalHits<- rbind(hits,MatureHits)
+
+#Remove sample 17 (very low counts)
+FinalHits<- FinalHits[,!colnames(FinalHits)%in% c("CM10", "CM14", "CM4", "CM17")]
+```
+
+Run DESeq2 using Final Hits as input
+```{r}
+hits<-FinalHits
+
+#set sample groups
+sampleGroup<- c(rep("CM", 15), rep("control", 5))
+
+#create metadata
+sample<- colnames(hits)
+meta<- data.frame(sample, sampleGroup)
+rownames(meta)<- meta$sample
+
+#Run DESeq2, extract results
+dds<- DESeqDataSetFromMatrix(countData=hits, 
+                             colData=meta, 
+                             design=~sampleGroup)
+
+dds$sampleGroup<- relevel(dds$sampleGroup, ref= "control")
+
+dds<- DESeq(dds)
+
+res<- as.data.frame(results(dds))
+res<- na.omit(res)
+res<- res[order(res$padj),]
+
+nrow(res[res$padj<0.05,])
+#11
+
+#To use for multmiR
+miRNA_DE<- res
+
+summary(results(dds))
+```
+
+Cluster samples using PCA
+```{r}
+#Function that takes hit counts and metadata as input, outputs PCA plot
+myPCA<- function(hits, meta){
+  if (all(rownames(meta) %in% colnames(hits))){
+    if (all(rownames(meta) == colnames(hits))){
+      dds<- DESeqDataSetFromMatrix(countData=hits, 
+                             colData=meta, 
+                             design=~sampleGroup)
+      dds$sampleGroup<- relevel(dds$sampleGroup, ref= "control")
+      rld<- rlog(dds)
+      plotPCA(rld, intgroup="sampleGroup")
+    }
+  } else {
+    print ("Error: check metadata")
+  }
+}
+
+myPCA(hits,meta)
+```
+
+```{r}
+#heatmap
+rld<- rlog(dds)
+topgenes<- rownames(res[1:25,])
+mat<- assay(rld)[topgenes,]
+mat<- mat - rowMeans(mat)
+
+subtractFromMin<- -.5
+subtractFromMax<- 2.5
+lengthOut<- 100
+mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
+pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)))
+```
+
+
+#Running DESeq2 with all 3 groups (TTN+/-) instead of just two
+```{r}
+#set sample groups
+sampleGroup<- c("pos", "pos", "neg", "pos", "neg", "neg", "neg", "pos", "neg", "neg", "neg", "neg", "neg", "neg", "neg", rep("control", 5))
+
+#create metadata
+sample<- colnames(hits)
+meta<- data.frame(sample, sampleGroup)
+rownames(meta)<- meta$sample
+
+#Run DESeq2, extract results
+dds<- DESeqDataSetFromMatrix(countData=hits, 
+                             colData=meta, 
+                             design=~sampleGroup)
+
+dds$sampleGroup<- relevel(dds$sampleGroup, ref= "control")
+
+dds<- DESeq(dds)
+
+PosvControl<- results(dds, contrast = c("sampleGroup", "pos", "control"))
+PosvControl<- na.omit(PosvControl[order(PosvControl$padj),])
+nrow(PosvControl[PosvControl$padj<0.05,])
+#0
+
+NegvControl<- results(dds, contrast = c("sampleGroup", "neg", "control"))
+NegvControl<- na.omit(NegvControl[order(NegvControl$padj),])
+nrow(NegvControl[NegvControl$padj<0.05,])
+#17
+
+PosvNeg<- results(dds, contrast = c("sampleGroup", "pos", "neg"))
+PosvNeg<- na.omit(PosvNeg[order(PosvNeg$padj),])
+nrow(PosvNeg[PosvNeg$padj<0.05,])
+#1
+```
+```{r}
+myPCA(hits,meta)
+```
+
+```{r}
+#heatmap
+rld<- rlog(dds)
+TopGenesUse<- 10
+TopGenes<- unique(c(rownames(PosvControl)[1:TopGenesUse],rownames(PosvNeg)[1:TopGenesUse],rownames(NegvControl)[1:TopGenesUse]))
+
+mat<- assay(rld)[topgenes,]
+mat<- mat - rowMeans(mat)
+
+subtractFromMin<- -.5
+subtractFromMax<- 2.5
+lengthOut<- 100
+mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
+pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)))
+```
+
+
+Write final list of miRNAs to file (sorted by padj, but including all species):
+```{r}
+write.csv(res, "//Cifs2/rcdata$/UKRNASeq/miRNA/DESeq2/UKy_miRNADESeq2Results_MatureCollapsedIsomirs_100219.csv")
+```
+
+
+
+#Integrating with RNASeq data
+
+First: run DESeq2 on mRNA data, using just 2 groups (3 used previously, makes more sense to use 2 here):
+
+```{r}
+#set sample groups
+sampleGroup<- c(rep("CM", 16), rep("control", 5))
+
+#read in count data, format, get rid of NA data, get rid of any genes where all counts are 0
+countsInput<- read.csv("//Cifs2/rcdata$/UKRNASeq/RawCounts/CountData.csv")
+rownames(countsInput)<- countsInput$X
+countsInput<- countsInput[,-1]
+colnames(countsInput)<- gsub(".counts.*", "", colnames(countsInput))
+counts<- na.omit(countsInput)
+counts<- counts[rowSums(counts)>0,]
+
+#create metadata
+sample<- colnames(countsInput)
+meta<- data.frame(sample, sampleGroup)
+rownames(meta)<- meta$sample
+
+#check that counts/meta data has samples in same order
+all(rownames(meta) %in% colnames(counts))
+all(rownames(meta) == colnames(counts))
+
+#create DESeq2 object
+dds<- DESeqDataSetFromMatrix(countData=counts, 
+                             colData=meta, 
+                             design=~sampleGroup)
+
+#define levels- so that controls will always be used as reference group
+dds$sampleGroup<- relevel(dds$sampleGroup, ref= "control")
+
+#run DE
+dds<- DESeq(dds)
+
+res<- as.data.frame(results(dds))
+res<- res[order(res$padj),]
+nrow(res[res$padj<0.05,])
+#9,000 DE
+
+#write DEGs to csv
+write.csv(res, "//Cifs2/rcdata$/UKRNASeq/DESeq2/Final/DGERes_ControlvsCm.csv")
+```
+
+Read in miRNA and mRNA 2 group DESeq2 results- don't need to run the previous chunk in the future
+```{r}
+mRNADEGs<- read.csv("//Cifs2/rcdata$/UKRNASeq/DESeq2/Final/DGERes_ControlvsCm.csv")
+rownames(mRNADEGs)<- mRNADEGs$X
+mRNADEGs<- mRNADEGs[,-1]
+
+miRNADEGs<-read.csv("//Cifs2/rcdata$/UKRNASeq/miRNA/DESeq2/miRNADESeq2Results_matureInput.csv")
+rownames(miRNADEGs)<- miRNADEGs$X
+miRNADEGs$X<- tolower(miRNADEGs$X)
+
+#select just significant mDEGs
+sigMDEGs<- na.omit(mRNADEGs[mRNADEGs$padj<0.05,])
+
+#Select just DE miRNAs
+sigMiDEGs<- miRNADEGs[miRNADEGs$padj<0.05,]
+```
+
+Running multiMiR
+```{r}
+#run multiMiR
+multimir_1<- get_multimir(mirna=sigMiDEGs$X, summary=TRUE)
+
+head(multimir_1@data)
+```
+```{r}
+data<- multimir_1@data
+
+#how many miRNAs have at least 1 target in this list?
+length(unique(data$mature_mirna_id))
+#9- 1 is isomir
+
+#how many targets are there?
+length(data$target_ensembl)
+#1210
+
+#Get list of targets. How many of these targets are in the list of mRNA DEGs?
+TargetsinDEGs<- data$target_symbol %in% rownames(sigMDEGs)
+sum(TargetsinDEGs)
+#288
+
+#If the DE miRNAs are really downregulating the mRNAs, then you would expect that miRNAs that are UPREGULATED in CM would have targets that are DOWNREGULATED in CM
+upmiRNAs<- sigMiDEGs[sigMiDEGs$log2FoldChange>0,]
+nrow(upmiRNAs)
+#6 miRNAs that are upregulated in CM
+
+upmiRNATargets<- data[tolower(data$mature_mirna_id) %in% upmiRNAs$X,]
+nrow(upmiRNATargets)
+#1018 targets of these upregulated miRNAs
+
+unique(upmiRNATargets$mature_mirna_id)
+#6 of these upregulated have at least one target
+
+downmRNAs<- sigMDEGs[sigMDEGs$log2FoldChange<0,]
+nrow(downmRNAs)
+#2,240 downregulated mRNAs in CM
+
+#how many of the targets of up miRNAs are in down mRNAs?
+UpTargetsinDownDEGs<- upmiRNATargets$target_symbol %in% rownames(downmRNAs)
+sum(UpTargetsinDownDEGs)
+#124
+
+#targets have different ratings of strength. Of the targets from miRNAs that are upregulated that are downregulated in mRNA, which have a higher confidence?
+downmRNAs<- upmiRNATargets[UpTargetsinDownDEGs,]
+weak<- grepl("Weak", downmRNAs$support_type)
+notWeak<- downmRNAs[!weak,]
+length(unique(notWeak$target_symbol))
+#16 such targets
+notWeak$target_symbol
+```
+
+```{r}
+#Doing the opposite: miRNAs that are significantly DOWNREGULATED in CM --> their targets --> matches in significantly UPREGULATED mRNAs
+downmiRNAs<- sigMiDEGs[sigMiDEGs$log2FoldChange<0,]
+nrow(downmiRNAs)
+#2 miRNAs that are downregulated in CM
+
+downmiRNATargets<- data[data$mature_mirna_id%in% rownames(downmiRNAs),]
+nrow(downmiRNATargets)
+#191 targets of these upregulated miRNAs
+
+unique(downmiRNATargets$mature_mirna_id)
+#2 of these 2 downregulated miRNAs have targets in the list
+
+upmRNAs<- sigMDEGs[sigMDEGs$log2FoldChange>0,]
+nrow(upmRNAs)
+#1,925 upregulated mRNAs in CM
+
+#how many of the targets of up miRNAs are in down mRNAs?
+DownTargetsinupDEGs<- downmiRNATargets$target_symbol %in% rownames(upmRNAs)
+sum(DownTargetsinupDEGs)
+#25
+
+#targets have different ratings of strength. Of the targets from miRNAs that are upregulated that are downregulated in mRNA, which have a higher confidence?
+upmRNAs<- downmiRNATargets[DownTargetsinupDEGs,]
+weak<- grepl("Weak", upmRNAs$support_type)
+notWeak<- upmRNAs[!weak,]
+length(unique(notWeak$target_symbol))
+#5 such targets
+unique(notWeak$target_symbol)
+
+```
+
+```{r}
+#Instead of using the confidence in the assay to determine the final list of affected mRNA targets, look at the targets that's affected by MORE THAN ONE miRNA
+
+#for upregulated miRNA targets in downregulated mRNAs:
+NumberOfDownOccurences<-table(downmRNAs$target_symbol, downmRNAs$mature_mirna_id)
+NumberofupmiRNAs<-apply(NumberOfDownOccurences,1,function(x) sum(x > 0))
+sum(NumberofupmiRNAs>1)
+#1 mRNA has more than potential miRNA match
+NumberofupmiRNAs[NumberofupmiRNAs>1]
+#ABHD15 
+
+#for downregulated miRNA targets in upregulated mRNAs:
+NumberOfUpOccurences<-table(upmRNAs$target_symbol, upmRNAs$mature_mirna_id)
+NumberofdownmiRNAs<-apply(NumberOfUpOccurences,1,function(x) sum(x > 0))
+sum(NumberofdownmiRNAs>1)
+#0 mRNAs has more than potential miRNA match
+
+```
+
+```{r}
+#write results to csv- combining up regulated miRNAs with their downregulated mRNA targets and downregulated miRNAs with their upregualted mRNA targets
+
+upmiRNADownmRNA<- downmRNAs[order(downmRNAs$mature_mirna_id), c(2,3,4,6,7,8)]
+upmiRNADownmRNA$miRNALog2<- "Positive"
+upmiRNADownmRNA$mRNALog2<- "Negative"
+
+downmiRNAUpmRNA<- upmRNAs[order(upmRNAs$mature_mirna_id), c(2,3,4,6,7,8)]
+downmiRNAUpmRNA$miRNALog2<- "Negative"
+downmiRNAUpmRNA$mRNALog2<- "Positive"
+
+write.csv(rbind(upmiRNADownmRNA, downmiRNAUpmRNA), "//Cifs2/rcdata$/UKRNASeq/miRNA/multiMiR/multimirResults_MatureInput.csv" )
+```
+
+
+#Running same analysis, but with miRNA list from using just mature miRNA as input for DESeq2
+
+```{r}
+miRNADEGs<-read.csv("//Cifs2/rcdata$/UKRNASeq/miRNA/DESeq2/miRNADESeq2Results_matureInput.csv")
+rownames(miRNADEGs)<- miRNADEGs$X
+miRNADEGs$X<- tolower(miRNADEGs$X)
+
+#select just significant mDEGs
+sigMDEGs<- na.omit(mRNADEGs[mRNADEGs$padj<0.05,])
+
+#Select just DE miRNAs
+sigMiDEGs<- miRNADEGs[miRNADEGs$padj<0.05,]
+```
+
+Running multiMiR
+```{r}
+#run multiMiR
+multimir_1<- get_multimir(mirna=sigMiDEGs$X, summary=TRUE)
+
+head(multimir_1@data)
+```
+```{r}
+data<- multimir_1@data
+
+#how many miRNAs have at least 1 target in this list?
+length(unique(data$mature_mirna_id))
+#9- 1 more than the number of DE miRNA bc targets were found for both the mature and the isomir for hsa-mir-126-3p
+
+#how many targets are there?
+length(data$target_ensembl)
+#1210
+
+#Get list of targets. How many of these targets are in the list of mRNA DEGs?
+TargetsinDEGs<- data$target_symbol %in% rownames(sigMDEGs)
+sum(TargetsinDEGs)
+#288
+
+#If the DE miRNAs are really downregulating the mRNAs, then you would expect that miRNAs that are UPREGULATED in CM would have targets that are DOWNREGULATED in CM
+upmiRNAs<- sigMiDEGs[sigMiDEGs$log2FoldChange>0,]
+nrow(upmiRNAs)
+#6 miRNAs that are upregulated in CM
+
+upmiRNATargets<- data[tolower(data$mature_mirna_id) %in% upmiRNAs$X,]
+nrow(upmiRNATargets)
+#1018 targets of these upregulated miRNAs
+
+unique(upmiRNATargets$mature_mirna_id)
+#6 of these upregulated have at least one target
+
+downmRNAs<- sigMDEGs[sigMDEGs$log2FoldChange<0,]
+nrow(downmRNAs)
+#2,240 downregulated mRNAs in CM
+
+#how many of the targets of up miRNAs are in down mRNAs?
+UpTargetsinDownDEGs<- upmiRNATargets$target_symbol %in% rownames(downmRNAs)
+sum(UpTargetsinDownDEGs)
+#124
+
+#targets have different ratings of strength. Of the targets from miRNAs that are upregulated that are downregulated in mRNA, which have a higher confidence?
+downmRNAs<- upmiRNATargets[UpTargetsinDownDEGs,]
+weak<- grepl("Weak", downmRNAs$support_type)
+notWeak<- downmRNAs[!weak,]
+nrow(notWeak)
+#18 such targets
+unique(notWeak$target_symbol)
+# [1] "ZWINT"  "SCRIB"  "SCRIB"  "NFYB"   "TYMS"   "CFTR"   "HIF1A"  "NCAM1"  "INPP5A" "LDHA"   "PTPN1"  "TFRC"  
+#[13] "PTBP3"  "GPD1L"  "FGFRL1" "FGFRL1" "P4HB"   "KCMF1"
+```
+
+```{r}
+#Doing the opposite: miRNAs that are significantly DOWNREGULATED in CM --> their targets --> matches in significantly UPREGULATED mRNAs
+downmiRNAs<- sigMiDEGs[sigMiDEGs$log2FoldChange<0,]
+nrow(downmiRNAs)
+#2 miRNAs that are downregulated in CM
+
+downmiRNATargets<- data[data$mature_mirna_id%in% rownames(downmiRNAs),]
+nrow(downmiRNATargets)
+#191 targets of these downregulated miRNAs
+
+unique(downmiRNATargets$mature_mirna_id)
+#both of the 2 miRNAs that are downregulated have targets
+
+upmRNAs<- sigMDEGs[sigMDEGs$log2FoldChange>0,]
+nrow(upmRNAs)
+#1,925 upregulated mRNAs in CM
+
+#how many of the targets of up miRNAs are in down mRNAs?
+DownTargetsinupDEGs<- downmiRNATargets$target_symbol %in% rownames(upmRNAs)
+sum(DownTargetsinupDEGs)
+#25
+
+#targets have different ratings of strength. Of the targets from miRNAs that are upregulated that are downregulated in mRNA, which have a higher confidence?
+upmRNAs<- downmiRNATargets[DownTargetsinupDEGs,]
+weak<- grepl("Weak", upmRNAs$support_type)
+notWeak<- upmRNAs[!weak,]
+nrow(notWeak)
+#18 such targets
+unique(notWeak$target_symbol)
+#"IRS1"   "VEGFA"  "CXCL12" "LRP6"   "SOX6"
+
+```
+```{r}
+#Combine up regulated miRNAs with their downregulated mRNA targets and downregulated miRNAs with their upregualted mRNA targets
+
+upmiRNADownmRNA<- downmRNAs[order(downmRNAs$mature_mirna_id), c(2,3,4,6,7,8)]
+upmiRNADownmRNA$miRNALog2<- "Positive"
+upmiRNADownmRNA$mRNALog2<- "Negative"
+
+downmiRNAUpmRNA<- upmRNAs[order(upmRNAs$mature_mirna_id), c(2,3,4,6,7,8)]
+downmiRNAUpmRNA$miRNALog2<- "Negative"
+downmiRNAUpmRNA$mRNALog2<- "Positive"
+
+miRNATargets_mRNASig<- rbind(upmiRNADownmRNA, downmiRNAUpmRNA)
+
+
+#add in 4 additional columns- log2 and padj for mRNAs in list, log2 and padj for miRNAs in list
+#First: get just the log2fc and padj values for sig degs with target matches (i.e., all target in the "mirnaTargets_mrnaSig" file)
+mrna_log2fc_padj<- sigMDEGs[rownames(sigMDEGs) %in% miRNATargets_mRNASig$target_symbol, c(2,6)]
+colnames(mrna_log2fc_padj)<- c("mRNA_log2FC", "mRNA_padj")
+mrna_log2fc_padj$target_symbol<- rownames(mrna_log2fc_padj)
+
+#merge this with the mirnatargets_mrnasig file- multimir data with log2/padj data
+miRNATargets_mRNASig_mrnalogpadj<- merge(miRNATargets_mRNASig, mrna_log2fc_padj, by= "target_symbol")
+
+#repeat for the miRNA values
+mirna_log2fc_padj<- sigMiDEGs[rownames(sigMiDEGs) %in% miRNATargets_mRNASig$mature_mirna_id, c(3,7)]
+colnames(mirna_log2fc_padj)<- c("miRNA_log2FC", "miRNA_padj")
+mirna_log2fc_padj$mature_mirna_id<- rownames(mirna_log2fc_padj)
+
+#merge this with the mirnatargets_mrnasig file- multimir data with log2/padj data
+miRNATargets_mRNASig_mrnalogpadj_mirnalogpadj<- merge(miRNATargets_mRNASig_mrnalogpadj, mirna_log2fc_padj, by= "mature_mirna_id")
+
+
+```
+
+
+```{r}
+write.csv(miRNATargets_mRNASig_mrnalogpadj_mirnalogpadj, "//Cifs2/rcdata$/UKRNASeq/miRNA/multiMiR/multimirResults_MatureInput_log2padj.csv" )
+```
+
+```{r}
+BiocManager::install("org.Hs.eg.db")
+library("org.Hs.eg.db")
+
+ncbiGeneID<- mapIds(org.Hs.eg.db, "SOX6", "ENTREZID", "SYMBOL")
+
+BiocManager::install("KEGGREST")
+library(KEGGREST)
+
+listDatabases()
+
+query<- keggGet("hsa:55553")
+```
+
+```{r}
+
+```
+
