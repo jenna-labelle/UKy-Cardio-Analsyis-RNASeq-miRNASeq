@@ -43,7 +43,7 @@ counts<- counts[rowSums(counts)>0,]
 
 Create Metadata and DESeq2 Object
 ```{r}
-#Read in metadata info, select just samples to be used- excluding sample 4, 10, and 14
+#Read in metadata info, select just samples to be used- excluding sample 4, 10, and 14 (either no good exome or RNASeq data)
 meta<- read.csv(paste(wd, "MetaData_AllSamples.csv",sep=""))
 rownames(meta)<- meta$Sample
 meta<- meta[,-1]
@@ -86,6 +86,7 @@ p
 
 ```{r}
 #function that takes dds object and desired contrasts as input, outputs ordered results
+
 ContrastDGE<- function(contrasts, dds){
   ContrastsUse<- c("sampleGroup", contrasts)
   ContrastsResults<- na.omit(results(dds, contrast=ContrastsUse))
@@ -102,7 +103,11 @@ nrow(DGERes_controlpos[DGERes_controlpos$padj<0.05,])
 nrow(DGERes_controlneg[DGERes_controlneg$padj<0.05,])
 nrow(DGERes_posneg[DGERes_posneg$padj<0.05,])
 ```
+1507 DEGs in TTN+ vs controls
+4427 DEGs in TTN- vs controls
+50 DEGs in TTN+ vs TTN-
 
+Write to csv file for later use
 ```{r}
 write.csv(DGERes_controlpos, paste(wd, "DESeq2/Final/", "DGERes_controlvspos_111219.csv", sep = ""))
 write.csv(DGERes_controlneg, paste(wd, "DESeq2/Final/", "DGERes_controlvsneg.csv_111219", sep = ""))
@@ -110,13 +115,18 @@ write.csv(DGERes_posneg, paste(wd, "DESeq2/Final/", "DGERes_posvsneg_111219.csv"
 ```
 
 
-#Plotting heatmaps: for  controls vs pos or neg analysis, for pos vs neg analysis, or for list of genes from ALL THREE analyses
+#Plotting 3 different heatmaps: 
+
+1) for  controls vs pos/ controls vs neg analysis
+2) for pos vs neg analysis
+3) for list of genes from ALL THREE analyses
+
 ```{r}
 #normalize for heatmap plotting
 rld<- rlog(dds)
 ```
 
-#Plot heat map- for just control vs pos or neg, top 75 genes in each
+#Heatmap 1- for just control vs pos or neg, top 75 genes in each
 ```{r}
 #select top 75 DE genes for control vs pos or neg, and all of sig DE
 topgenes<- unique(c(rownames(DGERes_controlneg[1:75,]), rownames(DGERes_controlpos[1:75,])))
@@ -138,7 +148,7 @@ metadata<- data.frame(Sample_Group=PCAData$sampleGroup, row.names=PCAData$name)
 pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)), show_rownames = FALSE, annotation_col = metadata, border_color= NA)
 ```
 
-#plot heatmap for just the pos vs neg analysis- top 75 genes
+#heatmap 2- for just the pos vs neg analysis- top 75 genes
 ```{r}
 #settings for heatmap
 subtractFromMin<- -.7
@@ -160,7 +170,7 @@ pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)), show_ro
 ```
 
 
-#Plot heatmap using list of genes taken from all three analysis- top 75 of control vs pos/neg and all of pos vs neg
+#heatmap 3- using list of genes taken from all three analysis- top 75 of control vs pos, control vs neg, and pos vs neg
 ```{r}
 #settings for heatmap
 subtractFromMin<- -.7
@@ -257,7 +267,74 @@ p<-ggplot(PvN) +
 p
 ```
 
+#TTN+ and TTN- specific DEGs
+
+TTN+ vs TTN- analysis not considered here
+
+Overall results of this section: samples don't cluster well when you only look at TTN+/TTN- specific DEGs. 
+
+
+Select genes that are DE in controls vs TTN+ but NOT in controls vs TTN-, and vice versa
+```{r}
+posSig<- as.data.frame(DGERes_controlpos[DGERes_controlpos$padj<0.05,])
+negSig<- as.data.frame(DGERes_controlneg[DGERes_controlneg$padj<0.05,])
+
+posOnly<- posSig[!(rownames(posSig) %in% rownames(negSig)),]
+negOnly<- negSig[!(rownames(negSig) %in% rownames(posSig)),]
+
+nrow(posOnly)
+nrow(negOnly)
+```
+
+205 TTN+ specific DEGs
+3125 TTN- specific DEGs
+
+
+#Plot heatmap of ONLY these TTN+/TTN- specific genes
+Use all TTN+ specific genes, and top half of TTN- specific
+```{r}
+mat<- assay(rld)[topgenes,]
+mat<- mat - rowMeans(mat)
+
+#settings for heatmap
+subtractFromMin<- -1
+subtractFromMax<- 2.5
+lengthOut<- 100
+mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
+
+#select top TTN+/TTN- specific genes
+topgenes<- c(rownames(posOnly), rownames(negOnly[1:1600,]))
+
+#Create metadata- to be used to color code to show which group the sample belongs to
+metadata<- data.frame(Sample_Group=PCAData$sampleGroup, row.names=PCAData$name)
+
+#plot heatmap
+pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)), show_rownames = FALSE, annotation_col = metadata, border_color=NA)
+```
+
+#Include TTN+ vs TTN- in heatmap
+```{r}
+#settings for heatmap
+subtractFromMin<- -.9
+subtractFromMax<- 3
+lengthOut<- 100
+mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
+
+#select top 75 DE genes for control vs pos or neg and pos vs neg
+topgenes<- c(rownames(posOnly), rownames(negOnly[1:1600,]), rownames(DGERes_posneg))
+
+#Create metadata- to be used to color code to show which group the sample belongs to
+metadata<- data.frame(Sample_Group=PCAData$sampleGroup, row.names=PCAData$name)
+
+#plot heatmap
+pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)), show_rownames = FALSE, annotation_col = metadata, border_color=NA)
+```
+
+
+
 #DESeq2 on two groups: all CM vs pos
+
+These results mainly used later for comparing to miRNA data
 
 ```{r}
 #Set metadata
@@ -305,8 +382,9 @@ Extract results for CM vs controls
 res<- as.data.frame(na.omit(results(dds)))
 resOrdered<- res[order(res$padj),]
 nrow(resOrdered[resOrdered$padj<0.05,])
-#4165
 ```
+4165 DEGs for Controls vs CM
+
 
 Plot heatmap for CM vs controls
 ```{r}
@@ -330,41 +408,5 @@ pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)), show_ro
 ```
 
 
-#Select only DEGs that are SPECIFIC to TTN+ or TTN-
-Still working on this section
 
-TTN+ vs TTN- analysis not considered here
-
-
-#Get TTN+ and TTN- specific DEGs
-```{r}
-posSig<- as.data.frame(DGERes_controlpos[DGERes_controlpos$padj<0.05,])
-negSig<- as.data.frame(DGERes_controlneg[DGERes_controlneg$padj<0.05,])
-
-posOnly<- posSig[!(rownames(posSig) %in% rownames(negSig)),]
-negOnly<- negSig[!(rownames(negSig) %in% rownames(posSig)),]
-```
-
-
-#Plot heatmap
-```{r}
-#settings for heatmap
-subtractFromMin<- -.7
-subtractFromMax<- 2
-lengthOut<- 100
-mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
-
-#select top 75 DE genes for control vs pos or neg and pos vs neg
-topgenes<- c(rownames(posOnly[1:200,]), rownames(negOnly[1:1600,]))
-
-
-mat<- assay(rld)[topgenes,]
-mat<- mat - rowMeans(mat)
-
-#Create metadata- to be used to color code to show which group the sample belongs to
-metadata<- data.frame(Sample_Group=PCAData$sampleGroup, row.names=PCAData$name)
-
-#plot heatmap
-pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)), show_rownames = FALSE, annotation_col = metadata, border_color=NA)
-```
 
