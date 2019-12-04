@@ -1,0 +1,147 @@
+---
+title: "Pathway analysis prep"
+output: html_notebook
+---
+
+#Preparing data for pathway analysis
+
+#First: checking how much the # of DEGs changed between previous DESeq2 analysis (when using fpkm filtering, here using fpkm>0. This list was previously used to perform pathway analysis) and current DESeq2 analysis (only filtering is rowsums(counts) >0)
+
+
+```{r}
+#Read in data for new DEGs
+wd<- "//Cifs2/rcdata$/UKRNASeq/"
+
+newPos<- read.csv(paste(wd, "DESeq2/Final/DGERes_controlvspos.csv", sep = ""))
+newNeg<- read.csv(paste(wd, "DESeq2/Final/DGERes_controlvsneg.csv", sep = ""))
+NewPosNeg<-read.csv(paste(wd, "DESeq2/Final/DGERes_posvsneg.csv", sep = ""))
+
+#select sig DEGs
+newPos<- newPos[newPos$padj<0.05,]
+newNeg<- newNeg[newNeg$padj<0.05,]
+NewPosNeg<- NewPosNeg[NewPosNeg$padj<0.05,]
+
+#read in data for old DEGs
+oldPos<-read.csv(paste(wd, "DESeq2/FPKM0_082819/DGERes_controlvspos.csv", sep =""))
+oldNeg<-read.csv(paste(wd, "DESeq2/FPKM0_082819/DGERes_controlvsneg.csv", sep =""))
+oldPosNeg<-read.csv(paste(wd, "DESeq2/FPKM0_082819/DGERes_posvsneg.csv", sep =""))
+
+#select significant DEGs
+oldPos<- oldPos[oldPos$padj<0.05,]
+oldNeg<- oldNeg[oldNeg$padj<0.05,]
+oldPosNeg<- oldPosNeg[oldPosNeg$padj<0.05,]
+
+#Merge significant DEGs to determine which match between the two lists
+MergePos<-merge(newPos, oldPos, by="X")
+MergeNeg<-merge(newNeg, oldNeg, by = "X")
+MergePosNeg<-merge(NewPosNeg, oldPosNeg, by ="X")
+
+#Create summary dataframe- very little change between two lists
+df<- data.frame(NumberSig_oldMethod=c(nrow(oldPos), nrow(oldNeg), nrow(oldPosNeg)), NumberSig_newMethod=c(nrow(newPos), nrow(newNeg), nrow(NewPosNeg)), NumberSig_inBoth=c(nrow(MergePos), nrow(MergeNeg), nrow(MergePosNeg)))
+rownames(df)<- c("PosvControl", "NegvControl", "PosvNeg")
+df
+```
+
+
+
+#Get lists of DEGs used for pathway analysis
+
+4 types:
+
+1) DEGs only in positive vs control and NOT in negative vs control
+
+2) DEGs only in negative vs control and NOT in positive vs control
+
+3) DEGs in BOTH positive vs control and negative vs control
+
+4) DEGs in postive vs negative
+
+
+Get DEGs that are unique to pos/neg
+```{r}
+pos_only<- newPos[newPos$X %in% setdiff(newPos$X, newNeg$X),]
+neg_only<- newNeg[newNeg$X %in% setdiff(newNeg$X, newPos$X),]
+#205 specific to pos, 3,125 specific to neg
+```
+
+Get DEGs that are in both pos and neg
+```{r}
+pos_and_neg<- merge(newPos, newNeg, by="X")
+#1,302
+```
+
+Write these all to csv to use later
+```{r}
+write.csv(pos_only, "Z:/ResCore_DevelopmentData/Jenna/UKRNASeq/DESeq2/Final/OnlyPos_DEGs.csv")
+write.csv(neg_only, "Z:/ResCore_DevelopmentData/Jenna/UKRNASeq/DESeq2/Final/OnlyNEG_DEGs.csv")
+write.csv(pos_and_neg, "Z:/ResCore_DevelopmentData/Jenna/UKRNASeq/DESeq2/Final/PosAndNeg_DEGs.csv")
+```
+
+Note: everything below this point is only needed for pathway analysis if you're trying to use the FULL version of GSEA. For the website version, you just need the gene lists generated above
+
+Read in normalized counts data- counts--> filter out rowsums(counts)<0 --> DESeq2 object --> run DESEq2 --> transform with rlog 
+```{r}
+normCounts<- read.csv("Z:/ResCore_DevelopmentData/Jenna/UKRNASeq/PathwayAnalysis/rldNorm_AfterDESeq2.csv")
+
+#read in fpkm data- or maybe don't use fpkm, use normcounts
+fpkmInput<- read.csv(paste(wd, "fpkm_tracking/fpkmData.csv", sep =""))
+colnames(fpkmInput)<- gsub(".genes.fpkm_tracking", "", colnames(fpkmInput))
+fpkm<- as.data.frame(lapply(fpkmInput, as.numeric))
+rownames(fpkm)<- fpkmInput$X
+fpkm<- fpkm[,-1]
+fpkm<- fpkm[rowSums(fpkm)>.5,]
+fpkm$X<- rownames(fpkm)
+
+#metadata to subset if needed
+sampleGroup<- c("pos", "pos", "neg", "pos", "neg", "neg", "neg", "pos", "neg", "neg", "neg", "neg", "neg", "pos", "neg", "neg", rep("control", 5))
+
+#Get only normalized count data for genes that are differentially expressed in the pos group only. Reformat.
+normPosOnly<- merge(normCounts, pos_only, by= "X")
+rownames(normPosOnly)<- normPosOnly$X
+normPosOnly<- normPosOnly[,-1]
+normPosOnly<- normPosOnly[,1:(ncol(normPosOnly)-6)]
+
+#Select only positive and control samples. Left with  normalized counts data for controls/pos for ONLY genes that are DE in pos but not neg
+normPosOnly1<- normPosOnly[,sampleGroup=="pos"]
+normPosOnly2<- normPosOnly[,sampleGroup=="control"]
+normPosOnly<- cbind(normPosOnly1, normPosOnly2)
+normPosOnly$X<- rownames(normPosOnly)
+
+#Get ensembl IDs
+library(biomaRt)
+ensembl = useMart("ensembl",dataset="hsapiens_gene_ensembl")
+attributes=c('ensembl_gene_id', "hgnc_symbol")
+G_list<- getBM(attributes=attributes, filters="hgnc_symbol",values=rownames(normPosOnly),
+    mart=ensembl, uniqueRows=T)
+#get rid of genes that have multiple ensembl IDs for their gene name
+G_list2<- G_list[!duplicated(G_list$hgnc_symbol),]
+colnames(G_list2)<- c("ensembl_gene_id", "X")
+#note: 13 genes removed here- no ensembl ID found
+
+#merge ensembl IDs with normalized counts df
+normPosOnlyEnsembl<- merge(normPosOnly, G_list2, by="X")
+rownames(normPosOnlyEnsembl)<- normPosOnlyEnsembl$ensembl_gene_id
+normPosOnlyEnsembl<- normPosOnlyEnsembl[,-1]
+normPosOnlyEnsembl<- normPosOnlyEnsembl[,1:(ncol(normPosOnlyEnsembl)-1)]
+```
+
+```{r}
+write.csv(normPosOnlyEnsembl, paste(wd, "PathwayAnalysis/GSEA-Final/GSEAInput_NormCounts_PosOnlyDEGs_EnsemblIDs.csv", sep = ""))
+```
+
+
+```{r}
+#Troubleshooting GSEA errors- get all normCounts --> ensembl IDs
+G_list<- getBM(attributes=attributes, filters="hgnc_symbol", values=normCounts$X, mart=ensembl, uniqueRows=T)
+G_list2<- G_list[!duplicated(G_list$hgnc_symbol),]
+G_list2<- G_list2[!duplicated(G_list2$ensembl_gene_id),]
+colnames(G_list2)<- c("ensembl_gene_id", "X")
+normEnsembl<- merge(normCounts, G_list2, by="X")
+rownames(normEnsembl)<- normEnsembl$ensembl_gene_id
+normEnsembl<- normEnsembl[,-1]
+normEnsembl<-normEnsembl[,1:(ncol(normEnsembl)-1)]
+```
+
+```{r}
+write.csv(normEnsembl, paste(wd, "PathwayAnalysis/GSEA-Final/GSEAInput_NormCounts_EnsemblIDs.csv", sep = ""))
+```

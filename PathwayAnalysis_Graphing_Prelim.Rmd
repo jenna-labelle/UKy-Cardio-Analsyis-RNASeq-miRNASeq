@@ -1,0 +1,76 @@
+---
+title: "Graphing pathway analysis"
+output: html_notebook
+---
+
+Import data
+```{r}
+wd<- wd<- "//Cifs2/rcdata$/UKRNASeq/"
+posonly<- read.delim(paste(wd, "PathwayAnalysis/Current/PosOnly_Cytoscape_AutoannotateResults.txt", sep =""))
+
+negonly<- read.delim(paste(wd, "PathwayAnalysis/Current/NegOnly_Cytoscape_AutoannotateResults.txt", sep =""))
+```
+
+For pos- based on log2
+```{r}
+posonly$log_FDR<- -log(posonly$average.padj,10)
+
+ggplot(posonly, aes (x=Cluster, y= logp, color=Regulation, fill=Regulation))+
+  geom_bar(stat="identity")+
+  theme_classic()+
+  ggtitle("Up and Downregulated groups of pathways: TTN+")+
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+For pos- based on number of nodes
+```{r}
+ggplot(posonly, aes (x=Cluster, y= Nodes, color=Regulation, fill=Regulation))+
+  geom_bar(stat="identity")+
+  theme_classic()+
+  ggtitle("Up and Downregulated groups of pathways: TTN+")+
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+For neg- based on log2
+```{r}
+negonly$log_FDR<- -log(negonly$mean.fdr.q.value,10)
+
+ggplot(negonly, aes (x=Cluster, y= log_FDR, color=X, fill=X))+
+  geom_bar(stat="identity")+
+  theme_classic()+
+  ggtitle("Up and Downregulated groups of pathways: TTN-")+
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+For neg- based on number of nodes
+```{r}
+ggplot(negonly, aes (x=Cluster, y= Nodes, color=X, fill=X))+
+  geom_bar(stat="identity")+
+  theme_classic()+
+  ggtitle("Up and Downregulated groups of pathways: TTN-")+
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+
+Excluding high one
+```{r}
+negonly<- negonly[-1,]
+ggplot(negonly, aes (x=Cluster, y= Nodes, color=X, fill=X))+
+  geom_bar(stat="identity")+
+  theme_classic()+
+  ggtitle("Up and Downregulated groups of pathways: TTN-")+
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+

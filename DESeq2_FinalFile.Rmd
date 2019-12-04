@@ -1,0 +1,269 @@
+---
+title: "DESeq2: Final"
+output: html_notebook
+---
+
+#Running DESeq2 analysis for UK RNASeq
+Final, simplified analysis
+
+libraries:
+```{r}
+suppressPackageStartupMessages(library(DESeq2))
+suppressPackageStartupMessages(library(viridis))
+suppressPackageStartupMessages(library(RColorBrewer))
+suppressPackageStartupMessages(library(pheatmap))
+```
+
+Importing data:
+```{r}
+#set path to file
+wd<- "//Cifs2/rcdata$/UKRNASeq/"
+countPath<- paste(wd, "RawCounts/CountData.csv", sep = "")
+
+#set sample groups
+sampleGroup<- c("pos", "pos", "neg", "pos", "neg", "neg", "neg", "pos", "neg", "neg", "neg", "neg", "neg", "pos", "neg", "neg", rep("control", 5))
+
+#read in count data, format, get rid of NA data, get rid of any genes where all counts are 0
+countsInput<- read.csv(countPath)
+rownames(countsInput)<- countsInput$X
+countsInput<- countsInput[,-1]
+colnames(countsInput)<- gsub(".counts.*", "", colnames(countsInput))
+counts<- na.omit(countsInput)
+counts<- counts[rowSums(counts)>0,]
+
+#create metadata
+sample<- colnames(countsInput)
+meta<- data.frame(sample, sampleGroup)
+rownames(meta)<- meta$sample
+```
+
+Creating DESeq2 object and running DESeq2
+```{r}
+#check that counts/meta data has samples in same order
+all(rownames(meta) %in% colnames(counts))
+all(rownames(meta) == colnames(counts))
+
+#create DESeq2 object
+dds<- DESeqDataSetFromMatrix(countData=counts, 
+                             colData=meta, 
+                             design=~sampleGroup)
+
+#define levels- so that controls will always be used as reference group
+dds$sampleGroup<- relevel(dds$sampleGroup, ref= "control")
+
+#run DE
+dds<- DESeq(dds)
+
+#normalize dds for later use. Only need to run this once.
+rld<- rlog(dds)
+write.csv(assay(rld), paste(wd, "rldNorm_AfterDESeq2.csv", sep=''))
+```
+
+
+#Assess data quality
+```{r}
+#PCA
+vsd <- vst(dds, blind=FALSE)
+PCAData<-plotPCA(vsd, intgroup="sampleGroup", returnData=TRUE)
+#sample 3: PC1 = 3.95 PC2= -1.07
+plotPCA(vsd, intgroup="sampleGroup")
+```
+
+Get results for all 3 groups
+```{r}
+#function that takes dds object and desired contrasts as input, outputs ordered results
+ContrastDGE<- function(contrasts, dds){
+  ContrastsUse<- c("sampleGroup", contrasts)
+  ContrastsResults<- na.omit(results(dds, contrast=ContrastsUse))
+  resOrdered<- ContrastsResults[order(ContrastsResults$padj),]
+  return(resOrdered)
+}
+
+#Extract comparisons for 3 desired groups
+DGERes_controlpos<- ContrastDGE(c("control", "pos"), dds)
+DGERes_controlneg<- ContrastDGE(c("control", "neg"), dds)
+DGERes_posneg<- ContrastDGE(c("pos", "neg"), dds)
+
+nrow(DGERes_controlpos[DGERes_controlpos$padj<0.05,])
+nrow(DGERes_controlneg[DGERes_controlneg$padj<0.05,])
+nrow(DGERes_posneg[DGERes_posneg$padj<0.05,])
+```
+
+Write to csv
+```{r}
+write.csv(DGERes_controlpos, paste(wd, "DESeq2/Final/", "DGERes_controlvspos.csv", sep = ""))
+write.csv(DGERes_controlneg, paste(wd, "DESeq2/Final/", "DGERes_controlvsneg.csv", sep = ""))
+write.csv(DGERes_posneg, paste(wd, "DESeq2/Final/", "DGERes_posvsneg.csv", sep = ""))
+```
+
+
+#Clustering DESeq2 results in heatmap
+
+Select only significant DEGs
+```{r}
+posSig<- DGERes_controlpos[DGERes_controlpos$padj<= 0.05,]
+negSig<- DGERes_controlneg[DGERes_controlneg$padj<= 0.05,]
+posnegSig<- DGERes_posneg[DGERes_posneg$padj<= 0.05,]
+```
+
+Select only DEGs with logfoldchange above 1
+```{r}
+Above1Pos<- posSig[abs(posSig$log2FoldChange)>=1,]
+Above1Neg<- negSig[abs(negSig$log2FoldChange)>=1,]
+Above1PosNeg<- posnegSig[abs(posnegSig$log2FoldChange)>=1,]
+
+subtractFromMin<-0
+subtractFromMax<- 2.5
+lengthOut<- 75
+```
+
+
+Plotting heatmaps: multiple options
+
+#Option #1: Using all sig genes
+```{r}
+topgenes<- unique(c(rownames(negSig), rownames(posSig)))
+topgenes<- unique(c(topgenes, rownames(posnegSig)))
+
+mat<- assay(rld)[topgenes,]
+mat<- mat - rowMeans(mat)
+
+mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
+pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)))
+#clusters: control / 1,2,9
+```
+
+
+#Option #2: Using top 50 sig genes from each
+```{r}
+topgenes<- unique(c(rownames(negSig[1:50,]), rownames(posSig[1:50,])))
+topgenes<- unique(c(topgenes, rownames(posnegSig[1:50,])))
+
+mat<- assay(rld)[topgenes,]
+mat<- mat - rowMeans(mat)
+
+mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
+pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)))
+#clusters: control / 1,2,3,5,9,17
+```
+
+
+
+#Option #3: Using top 100 sig genes from pos/neg vs control and all of pos vs neg
+```{r}
+topgenes<- unique(c(rownames(negSig[1:100,]), rownames(posSig[1:100,])))
+topgenes<- unique(c(topgenes, rownames(posnegSig)))
+
+mat<- assay(rld)[topgenes,]
+mat<- mat - rowMeans(mat)
+
+mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
+pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)))
+#clusters: control / 1,2,3,5,9,17
+```
+#Option #4: Using top 75 sig genes from pos/neg vs control and all of pos vs neg
+```{r}
+topgenes<- unique(c(rownames(negSig[1:75,]), rownames(posSig[1:75,])))
+topgenes<- unique(c(topgenes, rownames(posnegSig)))
+
+mat<- assay(rld)[topgenes,]
+mat<- mat - rowMeans(mat)
+
+mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
+pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)))
+#clusters: control / 1,2,3,5,9,17
+```
+
+#Option #4: Using top 200 sig genes from pos/neg vs control and all of pos vs neg
+```{r}
+topgenes<- unique(c(rownames(negSig[1:200,]), rownames(posSig[1:200,])))
+topgenes<- unique(c(topgenes, rownames(posnegSig)))
+
+mat<- assay(rld)[topgenes,]
+mat<- mat - rowMeans(mat)
+
+mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
+pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)))
+#clusters: control / 1,2,9
+```
+
+#Option #4: Using top 150 sig genes from pos/neg vs control and all of pos vs neg
+```{r}
+topgenes<- unique(c(rownames(negSig[1:150,]), rownames(posSig[1:150,])))
+topgenes<- unique(c(topgenes, rownames(posnegSig)))
+
+mat<- assay(rld)[topgenes,]
+mat<- mat - rowMeans(mat)
+
+mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
+pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)))
+#clusters: control / 1,2,9
+```
+
+#Option #4: Using top 125 sig genes from pos/neg vs control and all of pos vs neg
+```{r}
+topgenes<- unique(c(rownames(negSig[1:125,]), rownames(posSig[1:125,])))
+topgenes<- unique(c(topgenes, rownames(posnegSig)))
+
+mat<- assay(rld)[topgenes,]
+mat<- mat - rowMeans(mat)
+
+mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
+pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)))
+#clusters: control / 1,2,5,9,3,17
+```
+
+#Option #4: Use sig genes with fold change above 1
+```{r}
+topgenes<- unique(c(rownames(Above1Neg), rownames(Above1Pos)))
+topgenes<- unique(c(topgenes, rownames(Above1PosNeg)))
+
+mat<- assay(rld)[topgenes,]
+mat<- mat - rowMeans(mat)
+
+mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
+pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)))
+#clusters: controls/1,2,9
+```
+
+#Option #5: Use sig genes with fold change above .5
+```{r}
+Above1Pos<- posSig[abs(posSig$log2FoldChange)>=.5,]
+Above1Neg<- negSig[abs(negSig$log2FoldChange)>=.5,]
+Above1PosNeg<- posnegSig[abs(posnegSig$log2FoldChange)>=.5,]
+
+topgenes<- unique(c(rownames(Above1Neg), rownames(Above1Pos)))
+topgenes<- unique(c(topgenes, rownames(Above1PosNeg)))
+
+mat<- assay(rld)[topgenes,]
+mat<- mat - rowMeans(mat)
+
+mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
+pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)))
+#clusters: controls/1,2,9
+```
+
+
+#Option #5: Use sig genes with fold change above .1
+```{r}
+Above1Pos<- posSig[abs(posSig$log2FoldChange)>=.1,]
+Above1Neg<- negSig[abs(negSig$log2FoldChange)>=.1,]
+Above1PosNeg<- posnegSig[abs(posnegSig$log2FoldChange)>=.1,]
+
+topgenes<- unique(c(rownames(Above1Neg), rownames(Above1Pos)))
+topgenes<- unique(c(topgenes, rownames(Above1PosNeg)))
+
+mat<- assay(rld)[topgenes,]
+mat<- mat - rowMeans(mat)
+
+mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
+pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)))
+#clusters: controls/1,2,9
+```
+
+
+Conclusion: using a log2 fold change cutoff isn't super useful; doesn't seem to improve clustering.
+
+
+
+
