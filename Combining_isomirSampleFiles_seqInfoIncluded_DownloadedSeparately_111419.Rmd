@@ -14,11 +14,11 @@ ReadCounts<- function (file) {
   colnames(data)<- c("tracking_id", file)
   return(data)
 }
-
 ```
 
 
 ```{r}
+#set working directory
 wd<- "//Cifs2/rcdata$/Channing_miRNA_Blocker_Test/ChanningBlockerPilot_RProject/RawCounts/"
 
 files<- c("FilteredIsoHits.txt", paste("FilteredIsoHits (", 1:15, ").txt", sep =""))
