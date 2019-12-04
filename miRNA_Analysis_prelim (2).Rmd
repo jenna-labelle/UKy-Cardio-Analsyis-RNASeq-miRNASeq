@@ -1,5 +1,5 @@
 ---
-title: "miRNA Analysis"
+title: "miRNA Analysis: DESeq2, Plotting"
 output: html_notebook
 ---
 
@@ -9,22 +9,27 @@ suppressPackageStartupMessages(library(DESeq2))
 suppressPackageStartupMessages(library(dplyr))
 suppressPackageStartupMessages(library(pheatmap))
 suppressPackageStartupMessages(library(viridis))
+suppressPackageStartupMessages(library(ggplot2))
 ```
 
 #DESeq2 on mature miRNA only- this section used downstream.
 
+Data for individual samples was downloaded separately and combined using "Combining_isomirSampleFiles.Rmd"
+
 Read in data
 ```{r}
+#Set working directory
 wd<- "//Cifs2/rcdata$/UKRNASeq/miRNA/"
+
 hitsInput<- read.csv(paste(wd, "RawData/MaturemiRNA/miRNA_matureHits_downloadedSeparately.csv", sep=""))
 ```
 
+#Comparing TTN+ vs TTN- vs Controls
 ```{r}
-#process, rename samples correctly
+#process, rename samples
 hits<- hitsInput
 rownames(hits)<- hits$X
 hits<- hits[,2:ncol(hits)]
-
 colnames(hits)<- c(gsub("CM", "X", colnames(hits)[1:19]), colnames(hits)[20:24])
 
 #get rid of any IDs that have 0 counts for all samples
@@ -44,47 +49,44 @@ rownames(meta)<- meta$sample
 
 
 ```{r}
-#process, rename samples correctly
-#hits<- hitsInput[,c(1,3:26)]
-#hits<- hits[-1,]
-#rownames(hits)<- hits$SampleNumber
-#hits<- hits[,-1]
-
-#colnames(hits)<- c("Control4", "Control3", "Control2","Control1","Control5", "X7", "X14", "X12", "X13", "X11", "X10", "X8", "X5", "X6", "X4", "X16", "X15", "X3", "X19", "X1", "X2", "X9", "X18", "X17")
-
-#get rid of any IDs that have 0 counts for all samples
-#hits<- hits[rowSums(hits)>0,]
-#gets rid of 0 hits (?)
-
-#Reorder columns, get rid of any that aren't used in RNASeq
-#hits<- hits[,c(20,21,18,13,14,6,12,22,10,8,9,17,16,24,23,19,4,3,2,1,5)]
-
-#to use with other settings
-#hitsFinal<- hits
-
-#set sample groups
-#sampleGroup<- c("pos", "pos", "neg", "pos", "neg", "neg", "neg", "pos", "neg", "neg", "neg", "neg", "neg", "neg", "neg", rep("control", 5))
-
 #create metadata
 sample<- colnames(hits)
 meta<- data.frame(sample, sampleGroup)
 rownames(meta)<- meta$sample
 ```
 
-Plot on PCA
+#Plot on PCA- need to create DESeq2 object first
 ```{r}
 dds<- DESeqDataSetFromMatrix(countData=hits, 
                              colData=meta, 
                              design=~sampleGroup)
 dds$sampleGroup<- relevel(dds$sampleGroup, ref= "control")
-rld<- rlog(dds)
 
+#Normalize using variance stabilizing transformation- DESeq2 function
+vsd <- varianceStabilizingTransformation(dds, blind=FALSE)
+PCAData<-plotPCA(vsd, intgroup="sampleGroup", returnData=TRUE)
 
+#Rename samples from pos --> TTN+ and neg --> TTN-
+PCAData$sampleGroup<- gsub("pos", "TTN+", PCAData$sampleGroup)
+PCAData$sampleGroup<- gsub("neg", "TTN-", PCAData$sampleGroup)
+
+p<-ggplot(PCAData, aes(x=PC1, y=PC2, color=sampleGroup))+
+  geom_point(size=3)+
+  xlab("PC1: 24% Variance")+
+  ylab("PC2: 13% Variance")+
+  ggtitle("PCA: Controls vs TTN- vs TTN+")+
+  theme_classic()
+
+p
 
 ```
 
-Run DE
+Samples slightly cluster by CM status, but do NOT cluster based on TTN mutations
 
+
+#Rerun the above analysis, comparing ALL CM vs controls
+
+Create DESeq2 object and PCA plot
 ```{r}
 #set sample groups
 sampleGroup<- c(rep("CM", 15), rep("control", 5))
@@ -101,6 +103,26 @@ dds<- DESeqDataSetFromMatrix(countData=hits,
 
 dds$sampleGroup<- relevel(dds$sampleGroup, ref= "control")
 
+#Normalize using variance stabilizing transformation- DESeq2 function
+vsd <- varianceStabilizingTransformation(dds, blind=FALSE)
+PCAData<-plotPCA(vsd, intgroup="sampleGroup", returnData=TRUE)
+
+#Rename samples from pos --> TTN+ and neg --> TTN-
+PCAData$sampleGroup<- gsub("pos", "TTN+", PCAData$sampleGroup)
+PCAData$sampleGroup<- gsub("neg", "TTN-", PCAData$sampleGroup)
+
+p<-ggplot(PCAData, aes(x=PC1, y=PC2, color=sampleGroup))+
+  geom_point(size=3)+
+  xlab("PC1: 24% Variance")+
+  ylab("PC2: 13% Variance")+
+  ggtitle("PCA: Controls vs TTN- vs TTN+")+
+  theme_classic()
+
+p
+```
+
+Run differential expression on this DESeq2 object- CM vs Controls
+```{r}
 dds<- DESeq(dds)
 
 res<- as.data.frame(results(dds))
@@ -113,46 +135,39 @@ nrow(res[res$padj<0.05,])
 summary(results(dds))
 ```
 
-Heatmap
+Plot Heatmap for these DE results
 
 ```{r}
-#heatmap
-rld<- rlog(dds)
+#select top 25 DE genes for control vs CM
 topgenes<- rownames(res[1:25,])
-mat<- assay(rld)[topgenes,]
-mat<- mat - rowMeans(mat)
 
-subtractFromMin<- -.6
+#settings for heatmap
+subtractFromMin<- -.7
 subtractFromMax<- 2.75
 lengthOut<- 100
+
+mat<- assay(rld)[topgenes,]
+mat<- mat - rowMeans(mat)
 mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
+
+
+#Create metadata- to be used to color code to show which group the sample belongs to
+metadata<- data.frame(Sample_Group=PCAData$sampleGroup, row.names=PCAData$name)
+
+#plot heatmap
 pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)), show_rownames = FALSE, annotation_col = metadata)
 ```
 
 
-PCA on this data
+Volcano plot on this data
 ```{r}
-vsd<- varianceStabilizingTransformation(dds)
-PCAData<-plotPCA(vsd, intgroup="sampleGroup", returnData=TRUE)
-p<-ggplot(PCAData, aes(x=PC1, y=PC2, color=sampleGroup))+
-  geom_point(size=3)+
-  xlab("PC1: 23% Variance")+
-  ylab("PC2: 13% Variance")+
-  ggtitle("PCA: Controls vs TTN- vs TTN+")+
-  theme_classic()
-
-p
-```
-
-Volcano on this data
-```{r}
-#rename controls vs neg for use here
-CvN<- as.data.frame(res)
-threshold_OE<- CvN$padj<0.05
-CvN$threshold<- threshold_OE
+#convert DE results to dataframe, select only DE miRNAs (here set as < 0.1 to visualize more)
+CMvCon<- as.data.frame(res)
+threshold_OE<- CMvCon$padj<0.1
+CMvCon$threshold<- threshold_OE
 
 
-p<-ggplot(CvN) +
+p<-ggplot(CMvCon) +
         geom_point(aes(x=log2FoldChange, y=-log10(padj), colour=threshold)) +
         ggtitle("Controls vs CM: miRNA DE") +
         xlab("log2 fold change") + 
@@ -167,9 +182,11 @@ p<-ggplot(CvN) +
 p
 ```
 
-#######################
+#################################
 using isomirs, other combinations
-##############################
+#################################
+
+This section not currently in use, but I've retained it here to see previous analyses as needed
 
 
 Read in data
