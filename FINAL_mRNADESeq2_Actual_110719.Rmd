@@ -388,6 +388,15 @@ nrow(resOrdered[resOrdered$padj<0.05,])
 
 Plot heatmap for CM vs controls
 ```{r}
+#normalize for heatmap plotting
+rld<- rlog(dds)
+
+#Select topgenes
+topgenes<- rownames(resOrdered[1:75,])
+#Get normalized counts just for topgenes
+mat<- assay(rld)[topgenes,]
+mat<- mat - rowMeans(mat)
+
 #settings for heatmap
 subtractFromMin<- -.7
 subtractFromMax<- 2.75
@@ -397,8 +406,6 @@ mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=
 #select top 75 DE genes in pos vs neg analysis
 topgenes<- rownames(resOrdered[1:200,])
 
-mat<- assay(rld)[topgenes,]
-mat<- mat - rowMeans(mat)
 
 #Create metadata- to be used to color code to show which group the sample belongs to
 metadata<- data.frame(Sample_Group=PCAData$sampleGroup, row.names=PCAData$name)
@@ -407,6 +414,11 @@ metadata<- data.frame(Sample_Group=PCAData$sampleGroup, row.names=PCAData$name)
 pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)), show_rownames = FALSE, annotation_col = metadata, border_color = NA)
 ```
 
+Export DESeq2Results for Contols vs CM
+```{r}
+resOrdered$X<- rownames(resOrdered)
+write.csv(resOrdered,paste(wd, "DESeq2/Final/DGERes_ControlvsCM2.csv", sep =""))
+```
 
 
 
