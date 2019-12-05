@@ -138,6 +138,8 @@ summary(results(dds))
 Plot Heatmap for these DE results
 
 ```{r}
+#Normalize
+rld<- rlog(dds)
 #select top 25 DE genes for control vs CM
 topgenes<- rownames(res[1:25,])
 
@@ -156,6 +158,11 @@ metadata<- data.frame(Sample_Group=PCAData$sampleGroup, row.names=PCAData$name)
 
 #plot heatmap
 pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)), show_rownames = FALSE, annotation_col = metadata)
+```
+
+Write DE results to csv
+```{r}
+write.csv(as.data.frame(res), paste(wd, "DESeq2/miRNADESeq2Results_matureInput.csv", sep =""))
 ```
 
 
@@ -561,7 +568,7 @@ plotPCA(vsd, intgroup="sampleGroup")
 
 ```{r}
 #Heatmap
-#rld<- rlog(dds)
+rld<- rlog(dds)
 topgenes<- rownames(res[1:200,])
 mat<- assay(rld)[topgenes,]
 mat<- mat - rowMeans(mat)
