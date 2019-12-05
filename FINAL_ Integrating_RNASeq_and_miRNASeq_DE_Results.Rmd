@@ -1,0 +1,10 @@
+---
+title: "FINAL: Integrating RNASeq and miRNASeq DE Results- UKy"
+output: html_notebook
+---
+
+#Combining DESeq2 results from RNASeq and miRNASeq analyses
+
+Will compare miRNA targets to mRNA DEGs
+
+Import DESeq2 results for Controls vs CM analysis for RNASeq and miRNASeq
