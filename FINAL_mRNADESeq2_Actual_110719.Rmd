@@ -103,6 +103,7 @@ nrow(DGERes_controlpos[DGERes_controlpos$padj<0.05,])
 nrow(DGERes_controlneg[DGERes_controlneg$padj<0.05,])
 nrow(DGERes_posneg[DGERes_posneg$padj<0.05,])
 ```
+
 1507 DEGs in TTN+ vs controls
 4427 DEGs in TTN- vs controls
 50 DEGs in TTN+ vs TTN-
@@ -293,6 +294,9 @@ nrow(negOnly)
 #Plot heatmap of ONLY these TTN+/TTN- specific genes
 Use all TTN+ specific genes, and top half of TTN- specific
 ```{r}
+#select top TTN+/TTN- specific genes
+topgenes<- c(rownames(posOnly), rownames(negOnly[1:1600,]))
+
 mat<- assay(rld)[topgenes,]
 mat<- mat - rowMeans(mat)
 
@@ -302,8 +306,6 @@ subtractFromMax<- 2.5
 lengthOut<- 100
 mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
 
-#select top TTN+/TTN- specific genes
-topgenes<- c(rownames(posOnly), rownames(negOnly[1:1600,]))
 
 #Create metadata- to be used to color code to show which group the sample belongs to
 metadata<- data.frame(Sample_Group=PCAData$sampleGroup, row.names=PCAData$name)
