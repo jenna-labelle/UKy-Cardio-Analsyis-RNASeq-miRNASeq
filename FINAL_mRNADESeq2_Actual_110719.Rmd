@@ -109,9 +109,9 @@ nrow(DGERes_posneg[DGERes_posneg$padj<0.05,])
 
 Write to csv file for later use
 ```{r}
-write.csv(DGERes_controlpos, paste(wd, "DESeq2/Final/", "DGERes_controlvspos_111219.csv", sep = ""))
-write.csv(DGERes_controlneg, paste(wd, "DESeq2/Final/", "DGERes_controlvsneg.csv_111219", sep = ""))
-write.csv(DGERes_posneg, paste(wd, "DESeq2/Final/", "DGERes_posvsneg_111219.csv", sep = ""))
+write.csv(as.data.frame(DGERes_controlpos), paste(wd, "DESeq2/Final/", "DGERes_controlvspos_111219.csv", sep = ""))
+write.csv(as.data.frame(DGERes_controlneg), paste(wd, "DESeq2/Final/", "DGERes_controlvsneg_111219.csv", sep = ""))
+write.csv(as.data.frame(DGERes_posneg), paste(wd, "DESeq2/Final/", "DGERes_posvsneg_111219.csv", sep = ""))
 ```
 
 
@@ -392,7 +392,8 @@ Plot heatmap for CM vs controls
 rld<- rlog(dds)
 
 #Select topgenes
-topgenes<- rownames(resOrdered[1:75,])
+topgenes<- rownames(resOrdered[1:200,])
+
 #Get normalized counts just for topgenes
 mat<- assay(rld)[topgenes,]
 mat<- mat - rowMeans(mat)
@@ -402,10 +403,6 @@ subtractFromMin<- -.7
 subtractFromMax<- 2.75
 lengthOut<- 100
 mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
-
-#select top 75 DE genes in pos vs neg analysis
-topgenes<- rownames(resOrdered[1:200,])
-
 
 #Create metadata- to be used to color code to show which group the sample belongs to
 metadata<- data.frame(Sample_Group=PCAData$sampleGroup, row.names=PCAData$name)
@@ -417,7 +414,7 @@ pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)), show_ro
 Export DESeq2Results for Contols vs CM
 ```{r}
 resOrdered$X<- rownames(resOrdered)
-write.csv(resOrdered,paste(wd, "DESeq2/Final/DGERes_ControlvsCM2.csv", sep =""))
+write.csv(resOrdered,paste(wd, "DESeq2/Final/DGERes_ControlvsCM.csv", sep =""))
 ```
 
 
