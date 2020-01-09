@@ -1,0 +1,46 @@
+---
+title: "Pathogenic Splice Site Identification"
+output: html_notebook
+---
+Import libraries
+```{r}
+suppressPackageStartupMessages(library(Homo.sapiens))
+```
+
+Import bed files: all 5 controls + 2 samples with TTN splice variants we already found
+```{r}
+bed<- read.table("C:/Users/jjl71/Downloads/2.junctions.bed", sep ="\t", header=FALSE, stringsAsFactors=FALSE)
+
+colnames(bed)<- c("Chrom", "Start", "End", "Name", "Score", "Strand", "ThickStart", "ThickEnd","ItemRGB", "BlockCount", "BlockSizes", "BlockStarts")
+```
+
+
+Get gene IDs
+```{r}
+#get all known genes as Genomic ranges object
+genes<-genes(TxDb.Hsapiens.UCSC.hg19.knownGene)
+
+#Function to convert bed--> genomic ranges --> add gene IDs --> select gene ID of interest
+
+GetJunctionGeneID<- function(bed, genes, GeneID) {
+  #Convert bed file to genomic ranges, add score as metadata column
+  GR<- makeGRangesFromDataFrame(bed)
+  values(GR)<- DataFrame(Score=bed$Score, Name=bed$Name)
+  
+  #Get overlaps of GRanges bed info and all known genes
+  ranges<- subsetByOverlaps(GR,genes)
+  
+  #Get the geneID names, associate back with the overlap GRanges object
+  hits<- findOverlaps(GR,genes)
+  geneid <- CharacterList(split(genes$gene_id[subjectHits(hits)],queryHits(hits)))
+  mcols(ranges) <- DataFrame(mcols(ranges), geneid)
+  
+  Junctions_GeneIDs<- as.data.frame(ranges)
+  GeneID<- paste("\\b", GeneID, "\\b", sep="")
+  GeneJunctions_GeneIDs<- Junctions_GeneIDs[grep(GeneID, Junctions_GeneIDs$geneid),]
+  return(GeneJunctions_GeneIDs)
+}
+
+
+```
+
