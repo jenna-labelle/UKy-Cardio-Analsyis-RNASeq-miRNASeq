@@ -9,7 +9,15 @@ suppressPackageStartupMessages(library(Homo.sapiens))
 
 Import bed files: all 5 controls + 2 samples with TTN splice variants we already found
 ```{r}
-bed<- read.table("C:/Users/jjl71/Downloads/2.junctions.bed", sep ="\t", header=FALSE, stringsAsFactors=FALSE)
+bed_s2<- read.table("C:/Users/jjl71/Downloads/2.junctions.bed", sep ="\t", header=FALSE, stringsAsFactors=FALSE)
+bed_s9<- read.table("C:/Users/jjl71/Downloads/9.junctions.bed", sep ="\t", header=FALSE, stringsAsFactors=FALSE)
+
+bed_control1<- read.table("C:/Users/jjl71/Downloads/UK-Control-1.junctions.bed", sep ="\t", header=FALSE, stringsAsFactors=FALSE)
+bed_control2<- read.table("C:/Users/jjl71/Downloads/UK-Control-2.junctions.bed", sep ="\t", header=FALSE, stringsAsFactors=FALSE)
+bed_control3<- read.table("C:/Users/jjl71/Downloads/UK-Control-3.junctions.bed", sep ="\t", header=FALSE, stringsAsFactors=FALSE)
+bed_control4<- read.table("C:/Users/jjl71/Downloads/UK-Control-4.junctions.bed", sep ="\t", header=FALSE, stringsAsFactors=FALSE)
+bed_control5<- read.table("C:/Users/jjl71/Downloads/UK-Control-5.junctions.bed", sep ="\t", header=FALSE, stringsAsFactors=FALSE)
+
 
 colnames(bed)<- c("Chrom", "Start", "End", "Name", "Score", "Strand", "ThickStart", "ThickEnd","ItemRGB", "BlockCount", "BlockSizes", "BlockStarts")
 ```
@@ -21,8 +29,9 @@ Get gene IDs
 genes<-genes(TxDb.Hsapiens.UCSC.hg19.knownGene)
 
 #Function to convert bed--> genomic ranges --> add gene IDs --> select gene ID of interest
-
 GetJunctionGeneID<- function(bed, genes, GeneID) {
+  #Set column names
+  colnames(bed)<- c("Chrom", "Start", "End", "Name", "Score", "Strand", "ThickStart", "ThickEnd","ItemRGB", "BlockCount", "BlockSizes", "BlockStarts")
   #Convert bed file to genomic ranges, add score as metadata column
   GR<- makeGRangesFromDataFrame(bed)
   values(GR)<- DataFrame(Score=bed$Score, Name=bed$Name)
@@ -40,7 +49,44 @@ GetJunctionGeneID<- function(bed, genes, GeneID) {
   GeneJunctions_GeneIDs<- Junctions_GeneIDs[grep(GeneID, Junctions_GeneIDs$geneid),]
   return(GeneJunctions_GeneIDs)
 }
+```
 
 
+Get TTN junctions for all 7 samples
+```{r}
+TTN_Junctions_Sample2<- GetJunctionGeneID(bed_s2, genes, "7273") #775 junctions
+TTN_Junctions_Sample9<- GetJunctionGeneID(bed_s9, genes, "7273") #591 junctions
+
+TTN_Junctions_Control1<- GetJunctionGeneID(bed_control1, genes, "7273") #668 junctions
+TTN_Junctions_Control2<- GetJunctionGeneID(bed_control2, genes, "7273") #727 junctions
+TTN_Junctions_Control3<- GetJunctionGeneID(bed_control3, genes, "7273") #633 junctions
+TTN_Junctions_Control4<- GetJunctionGeneID(bed_control4, genes, "7273") #624 Junctions
+TTN_Junctions_Control5<- GetJunctionGeneID(bed_control5, genes, "7273") #625 junctions
+
+```
+
+Get list of all TTN junctions found in sample 2 or sample 9 but NOT found in any of the controls
+```{r}
+#List of all TTN junctions in controls
+ControlTTNJunctions<- unique(c(TTN_Junctions_Control1$Name, TTN_Junctions_Control2$Name, TTN_Junctions_Control3, TTN_Junctions_Control4, TTN_Junctions_Control5))
+
+#junctions in sample 2 that are not in controls
+ControlJunctionsInSample2<- TTN_Junctions_Sample2$Name %in% ControlTTNJunctions
+Sample2UniqueTTNJunctions<- TTN_Junctions_Sample2[!ControlJunctionsInSample2,] #127 unique sample 2 junctions
+
+#junctions in sample 9 that are not in controls
+ControlJunctionsInSample9<- TTN_Junctions_Sample9$Name %in% ControlTTNJunctions
+Sample9UniqueTTNJunctions<- TTN_Junctions_Sample9[!ControlJunctionsInSample9,] #46 unique sample 9 junctions
+```
+
+Additional filtering of the two lists of unique junctions
+```{r}
+#At least 2 reads to support junction
+UniqueSample2_Depth<- Sample2UniqueTTNJunctions[Sample2UniqueTTNJunctions$Score>2,] #53 pass threshold
+UniqueSample9_Depth<- Sample9UniqueTTNJunctions[Sample9UniqueTTNJunctions$Score>2,] #19 pass threshold
+
+#Not found in the other sample
+SuperUniqueSample2<- UniqueSample2_Depth[!(UniqueSample2_Depth$Name %in% TTN_Junctions_Sample9),] #Still 53
+SuperUniqueSample9<- UniqueSample9_Depth[!(UniqueSample9_Depth$Name %in% TTN_Junctions_Sample2),] #still 19
 ```
 
