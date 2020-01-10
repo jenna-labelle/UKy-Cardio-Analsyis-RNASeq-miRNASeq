@@ -18,8 +18,6 @@ bed_control3<- read.table("C:/Users/jjl71/Downloads/UK-Control-3.junctions.bed",
 bed_control4<- read.table("C:/Users/jjl71/Downloads/UK-Control-4.junctions.bed", sep ="\t", header=FALSE, stringsAsFactors=FALSE)
 bed_control5<- read.table("C:/Users/jjl71/Downloads/UK-Control-5.junctions.bed", sep ="\t", header=FALSE, stringsAsFactors=FALSE)
 
-
-colnames(bed)<- c("Chrom", "Start", "End", "Name", "Score", "Strand", "ThickStart", "ThickEnd","ItemRGB", "BlockCount", "BlockSizes", "BlockStarts")
 ```
 
 
@@ -89,4 +87,52 @@ UniqueSample9_Depth<- Sample9UniqueTTNJunctions[Sample9UniqueTTNJunctions$Score>
 SuperUniqueSample2<- UniqueSample2_Depth[!(UniqueSample2_Depth$Name %in% TTN_Junctions_Sample9),] #Still 53
 SuperUniqueSample9<- UniqueSample9_Depth[!(UniqueSample9_Depth$Name %in% TTN_Junctions_Sample2),] #still 19
 ```
+
+```{r}
+#For sample 9: our "positive control" splice site chr2:179496028-179497001 is not showing up in this list.
+
+#It's removed when we filter by controls. So what controls have this splice site?
+TTN_Junctions_Control1[grep("chr2:179496028-179497001", TTN_Junctions_Control1$Name),] #4
+TTN_Junctions_Control2[grep("chr2:179496028-179497001", TTN_Junctions_Control2$Name),] #0
+TTN_Junctions_Control3[grep("chr2:179496028-179497001", TTN_Junctions_Control3$Name),] #0
+TTN_Junctions_Control4[grep("chr2:179496028-179497001", TTN_Junctions_Control4$Name),] #0
+TTN_Junctions_Control5[grep("chr2:179496028-179497001", TTN_Junctions_Control5$Name),] #0
+#Only control 1 has it, and at very low levels. When filtering junctions because they're found in controls, should either set a threshold to only count when controls have higher depth (i.e., at least 10 reads supporting) or when found in more than 1 control. Either of these thresholds would have resulted in this junction being discovered.
+
+#In samples 2 and 9
+TTN_Junctions_Sample2[grep("chr2:179496028-179497001", TTN_Junctions_Sample2$Name),] #8
+TTN_Junctions_Sample9[grep("chr2:179496028-179497001", TTN_Junctions_Sample9$Name),] #605
+
+#For sample 2: our "positive control" splice site is at the region chr2:179,602,998-179,603,177 chr2:179602817-179604260
+#In this region, there should be several splice variants.
+#We did actually find this:
+sample2_Pos<- makeGRangesFromDataFrame(UniqueSample2_Depth)
+values(sample2_Pos)<- DataFrame(Score=UniqueSample2_Depth$Score, Name=UniqueSample2_Depth$Name)
+
+PosControl<-GRanges(seqnames =Rle(c("chr2"), c(2)),
+                    ranges =IRanges(179602817, end = 179604260),
+                    strand =Rle(strand(c("-")),c(1)))
+
+Sample2_AtPos<-as.data.frame(subsetByOverlaps(sample2_Pos,PosControl)) #11 junctions that OVERLAP the region of interest. 
+
+Sample2_AtPos
+#Looking at these junctions in IGV, the last 3 are actually at this junction, not spreading way over across this junction
+#chr2:179603079-179603867
+#chr2:179603167-179603867
+#chr2:179603229-179603867
+
+#So: these 3 junctions are ones we wanted to end up with. Looking at the bed file in IGV, I also can't see any that we would want to mark as interesting in this area but didn't make it through the filter
+```
+
+So for sample 9, we need to decrease the stringency of our control filters to allow for at least 1 control sample having a couple reads supporting that junction, and still mark it interesting
+
+
+
+For sample 2, the question is: how do we increase the filter to get rid of all those other ones we're not interested in?
+
+Some ideas:
+1) Don't look at junctions that span too far. Kind of arbitrary, and may not be the case in all. But if a junction is spanning >10kb, it's probably just random mapping
+2) Increase the score filters- junctions with fewer than 10 reads aren't likely to be interesting, unless we're REALLY affecting expression by messing with splicing. So may not want to do this.
+3) Set a similar filter as in the paper- one side of the junction has to be canonical. We could define canonical as occurring in the control set a bunch of times- like at least 100 depth
+4) Compare it to the other samples- like paper, that junction has to have highest depth in that sample, by at least a factor of 2
 
