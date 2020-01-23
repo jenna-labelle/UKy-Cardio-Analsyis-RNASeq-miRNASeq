@@ -1,0 +1,207 @@
+---
+title: "Pathogenic Splice site identification: developing filters to be used"
+output: html_notebook
+---
+
+Import libraries
+```{r}
+suppressPackageStartupMessages(library(Homo.sapiens))
+```
+
+
+Functions
+```{r}
+#Function to convert bed--> genomic ranges --> add gene IDs --> select gene ID of interest
+GetJunctionGeneID<- function(bed, genes, GeneIDs) {
+  #Set column names
+  colnames(bed)<- c("Chrom", "Start", "End", "Name", "Score", "Strand", "ThickStart", "ThickEnd","ItemRGB", "BlockCount", "BlockSizes", "BlockStarts")
+  #Convert bed file to genomic ranges, add score as metadata column
+  GR<- makeGRangesFromDataFrame(bed)
+  values(GR)<- DataFrame(Score=bed$Score, Name=bed$Name)
+  
+  #Get overlaps of GRanges bed info and all known genes
+  ranges<- subsetByOverlaps(GR,genes)
+  
+  #Get the geneID names, associate back with the overlap GRanges object
+  hits<- findOverlaps(GR,genes)
+  geneid <- CharacterList(split(genes$gene_id[subjectHits(hits)],queryHits(hits)))
+  mcols(ranges) <- DataFrame(mcols(ranges), geneid)
+  
+  Junctions_GeneIDs<- as.data.frame(ranges)
+  GeneJunctions_GeneIDs<- Junctions_GeneIDs[Junctions_GeneIDs$geneid %in% GeneIDs,]
+  return(GeneJunctions_GeneIDs)
+}
+
+#Write function that filters junctions based on pre-built control list of junctions + depth
+FilterJunctions<- function(ControlJunctions, SampleJunctions, DepthFilter){
+  ControlJunctionsInSample<- SampleJunctions$Name %in% ControlJunctions$Name
+  UniqueTTNJunctions<- SampleJunctions[!ControlJunctionsInSample,]
+  UniqueSample_Depth<- UniqueTTNJunctions[UniqueTTNJunctions$Score>DepthFilter,]
+  print(nrow(UniqueSample_Depth))
+  return(UniqueSample_Depth)
+}
+```
+
+
+#Building filtering mechanism
+
+Import bed files: all 5 controls + 2 samples with TTN splice variants we already found
+```{r}
+#For novel tx alignment
+wd<- "//Cifs2/rcdata$/UKRNASeq/RawFiles/Bed/"
+#For Original alignment
+wd<- "//Cifs2/rcdata$/UKRNASeq/PathogenicSpliceSiteAnalysis/Junctions.bed/"
+
+bed_s2<- read.table(paste(wd, "2.junctions.bed", sep=""),sep ="\t", header=FALSE, stringsAsFactors=FALSE)
+bed_s9<- read.table(paste(wd, "9.junctions.bed", sep=""),sep ="\t", header=FALSE, stringsAsFactors=FALSE)
+
+bed_control1<- read.table(paste(wd, "UK-Control-1.junctions.bed", sep=""),sep ="\t", header=FALSE, stringsAsFactors=FALSE)
+bed_control2<- read.table(paste(wd, "UK-Control-2.junctions.bed", sep=""),sep ="\t", header=FALSE, stringsAsFactors=FALSE)
+bed_control3<- read.table(paste(wd, "UK-Control-3.junctions.bed", sep=""),sep ="\t", header=FALSE, stringsAsFactors=FALSE)
+bed_control4<- read.table(paste(wd, "UK-Control-4.junctions.bed", sep=""),sep ="\t", header=FALSE, stringsAsFactors=FALSE)
+bed_control5<- read.table(paste(wd, "UK-Control-5.junctions.bed", sep=""),sep ="\t", header=FALSE, stringsAsFactors=FALSE)
+```
+
+
+Get TTN junctions for all 7 samples
+```{r}
+#get all known genes as Genomic ranges object
+genes<-genes(TxDb.Hsapiens.UCSC.hg19.knownGene)
+
+TTN_Junctions_Sample2<- GetJunctionGeneID(bed_s2, genes, "7273") #775 junctions
+TTN_Junctions_Sample9<- GetJunctionGeneID(bed_s9, genes, "7273") #591 junctions
+
+TTN_Junctions_Control1<- GetJunctionGeneID(bed_control1, genes, "7273") #668 junctions
+TTN_Junctions_Control2<- GetJunctionGeneID(bed_control2, genes, "7273") #727 junctions
+TTN_Junctions_Control3<- GetJunctionGeneID(bed_control3, genes, "7273") #633 junctions
+TTN_Junctions_Control4<- GetJunctionGeneID(bed_control4, genes, "7273") #624 Junctions
+TTN_Junctions_Control5<- GetJunctionGeneID(bed_control5, genes, "7273") #625 junctions
+
+```
+
+Get list of all TTN junctions found in sample 2 or sample 9 but NOT found in any of the controls
+```{r}
+#List of all TTN junctions in controls
+ControlTTNJunctions<- unique(c(TTN_Junctions_Control1$Name, TTN_Junctions_Control2$Name, TTN_Junctions_Control3, TTN_Junctions_Control4, TTN_Junctions_Control5))
+
+#junctions in sample 2 that are not in controls
+ControlJunctionsInSample2<- TTN_Junctions_Sample2$Name %in% ControlTTNJunctions
+Sample2UniqueTTNJunctions<- TTN_Junctions_Sample2[!ControlJunctionsInSample2,] #127 unique sample 2 junctions
+
+#junctions in sample 9 that are not in controls
+ControlJunctionsInSample9<- TTN_Junctions_Sample9$Name %in% ControlTTNJunctions
+Sample9UniqueTTNJunctions<- TTN_Junctions_Sample9[!ControlJunctionsInSample9,] #46 unique sample 9 junctions
+```
+
+Additional filtering of the two lists of unique junctions
+```{r}
+#At least 2 reads to support junction
+UniqueSample2_Depth<- Sample2UniqueTTNJunctions[Sample2UniqueTTNJunctions$Score>2,] #53 pass threshold
+UniqueSample9_Depth<- Sample9UniqueTTNJunctions[Sample9UniqueTTNJunctions$Score>2,] #19 pass threshold
+
+#Not found in the other sample
+SuperUniqueSample2<- UniqueSample2_Depth[!(UniqueSample2_Depth$Name %in% TTN_Junctions_Sample9),] #Still 53
+SuperUniqueSample9<- UniqueSample9_Depth[!(UniqueSample9_Depth$Name %in% TTN_Junctions_Sample2),] #still 19
+```
+
+```{r}
+#For sample 9: our "positive control" splice site chr2:179496028-179497001 is not showing up in this list.
+
+#It's removed when we filter by controls. So what controls have this splice site?
+TTN_Junctions_Control1[grep("chr2:179496028-179497001", TTN_Junctions_Control1$Name),] #4
+TTN_Junctions_Control2[grep("chr2:179496028-179497001", TTN_Junctions_Control2$Name),] #0
+TTN_Junctions_Control3[grep("chr2:179496028-179497001", TTN_Junctions_Control3$Name),] #0
+TTN_Junctions_Control4[grep("chr2:179496028-179497001", TTN_Junctions_Control4$Name),] #0
+TTN_Junctions_Control5[grep("chr2:179496028-179497001", TTN_Junctions_Control5$Name),] #0
+#Only control 1 has it, and at very low levels. When filtering junctions because they're found in controls, should either set a threshold to only count when controls have higher depth (i.e., at least 10 reads supporting) or when found in more than 1 control. Either of these thresholds would have resulted in this junction being discovered.
+
+#In samples 2 and 9
+TTN_Junctions_Sample2[grep("chr2:179496028-179497001", TTN_Junctions_Sample2$Name),] #8
+TTN_Junctions_Sample9[grep("chr2:179496028-179497001", TTN_Junctions_Sample9$Name),] #605
+
+#For sample 2: our "positive control" splice site is at the region chr2:179,602,998-179,603,177 chr2:179602817-179604260
+#In this region, there should be several splice variants.
+#We did actually find this:
+sample2_Pos<- makeGRangesFromDataFrame(UniqueSample2_Depth)
+values(sample2_Pos)<- DataFrame(Score=UniqueSample2_Depth$Score, Name=UniqueSample2_Depth$Name)
+
+PosControl<-GRanges(seqnames =Rle(c("chr2"), c(2)),
+                    ranges =IRanges(179602817, end = 179604260),
+                    strand =Rle(strand(c("-")),c(1)))
+
+Sample2_AtPos<-as.data.frame(subsetByOverlaps(sample2_Pos,PosControl)) #11 junctions that OVERLAP the region of interest. 
+
+Sample2_AtPos
+#Looking at these junctions in IGV, the last 3 are actually at this junction, not spreading way over across this junction
+#chr2:179603079-179603867
+#chr2:179603167-179603867
+#chr2:179603229-179603867
+
+#So: these 3 junctions are ones we wanted to end up with. Looking at the bed file in IGV, I also can't see any that we would want to mark as interesting in this area but didn't make it through the filter
+```
+
+So for sample 9, we need to decrease the stringency of our control filters to allow for at least 1 control sample having a couple reads supporting that junction, and still mark it interesting
+
+
+
+For sample 2, the question is: how do we increase the filter to get rid of all those other ones we're not interested in?
+
+Some ideas:
+1) Don't look at junctions that span too far. Kind of arbitrary, and may not be the case in all. But if a junction is spanning >10kb, it's probably just random mapping
+2) Increase the score filters- junctions with fewer than 10 reads aren't likely to be interesting, unless we're REALLY affecting expression by messing with splicing. So may not want to do this.
+3) Set a similar filter as in the paper- one side of the junction has to be canonical. We could define canonical as occurring in the control set a bunch of times- like at least 100 depth
+4) Compare it to the other samples- like paper, that junction has to have highest depth in that sample, by at least a factor of 2
+
+
+```{r}
+#Discovering positive control splice site in sample 9: decreasing stringency of control filters
+
+#Take list of all junctions found in controls --> to data.frame with 5 columns (1 for each control sample) for each junction. Include the number of reads that support that junction for each sample, entering a 0 if it doesn't appear
+Merge1_2<- merge(TTN_Junctions_Control1[,6:7],TTN_Junctions_Control2[,6:7], all=TRUE, by= "Name")
+Merge3<- merge(TTN_Junctions_Control3[,6:7], Merge1_2, all=TRUE,by="Name")
+Merge4<- merge(TTN_Junctions_Control4[,6:7], Merge3, all=TRUE,by="Name")
+Merge5<- merge(TTN_Junctions_Control5[,6:7], Merge4, all=TRUE,by="Name")
+colnames(Merge5)<- c("Name", "Score_Control5", "Score_Control4", "Score_Control3", "Score_Control2", "Score_Control1")
+
+#Convert NA to 0
+Merge5[is.na(Merge5)]<- 0
+
+#Add column with maximum score for each junction
+Merge5$Max<- rowMax(as.matrix(Merge5[,2:6]))
+
+#Add column with Number of samples that have that junction
+Merge5$SamplesWithJunction<- rowSums(Merge5[,2:6]>0)
+
+#Get list of junctions to NOT look at in sample 9: Appears in >1 control samples + supported by > 10 reads
+ControlJunctions_Filtered<- Merge5[Merge5$Max>10,]
+ControlJunctions_Filtered<- ControlJunctions_Filtered[ControlJunctions_Filtered$SamplesWithJunction>1,]
+#Down to 464 junctions- removed 434 junctions from "controls" list
+
+#junctions in sample 9 that are not in filtered control list
+ControlJunctionsInSample9<- TTN_Junctions_Sample9$Name %in% ControlJunctions_Filtered$Name
+Sample9UniqueTTNJunctions<- TTN_Junctions_Sample9[!ControlJunctionsInSample9,] #160 sample 9 junctions NOT in filtered controls list
+
+#Filtering unique sample 9 junctions by depth
+UniqueSample9_Depth<- Sample9UniqueTTNJunctions[Sample9UniqueTTNJunctions$Score>2,] #56 pass threshold
+UniqueSample9_Depth<- Sample9UniqueTTNJunctions[Sample9UniqueTTNJunctions$Score>20,] #1 passes threshold
+
+UniqueSample9_Depth[grep("chr2:179496028-179497001", UniqueSample9_Depth$Name),]
+
+#With these new control filters, this "positive control" junction for sample 9 can now be seen in our sample 9 "shortlist"
+#Also: this junction is supported by 605 reads in sample 9. The next highest score in our shortlist is 11. If we do more stringent depth filtering to narrow down shortlist even more, (score>20), we're left with only 1 junction- our positive control.
+
+
+#Filtering sample 2 based on filterd control list --> more stringent depth
+
+#junctions in sample 2 that are not in filtered control list
+ControlJunctionsInSample2<- TTN_Junctions_Sample2$Name %in% ControlJunctions_Filtered$Name
+Sample2UniqueTTNJunctions<- TTN_Junctions_Sample2[!ControlJunctionsInSample2,] #319 sample 2 junctions NOT in filtered controls list
+
+#Filtering unique sample 2 junctions by depth
+UniqueSample2_Depth<- Sample2UniqueTTNJunctions[Sample2UniqueTTNJunctions$Score>2,] #139 pass threshold
+UniqueSample2_Depth<- Sample2UniqueTTNJunctions[Sample2UniqueTTNJunctions$Score>20,] #5 pass threshold
+
+#Only 5 pass threshold. So just filtering based on occurence in controls and depth might be a quick and dirty way to find interesting titin junctions to look at more closely in IGV.
+
+#Repeating this analysis for the other samples.
+```
