@@ -7,28 +7,11 @@ Import libraries
 suppressPackageStartupMessages(library(Homo.sapiens))
 ```
 
-Import bed files: all 5 controls + 2 samples with TTN splice variants we already found
+
+Functions
 ```{r}
-wd<- "//Cifs2/rcdata$/UKRNASeq/PathogenicSpliceSiteAnalysis/Junctions.bed/"
-bed_s2<- read.table(paste(wd, "2.junctions.bed", sep=""),sep ="\t", header=FALSE, stringsAsFactors=FALSE)
-bed_s9<- read.table(paste(wd, "9.junctions.bed", sep=""),sep ="\t", header=FALSE, stringsAsFactors=FALSE)
-
-bed_control1<- read.table(paste(wd, "UK-Control-1.junctions.bed", sep=""),sep ="\t", header=FALSE, stringsAsFactors=FALSE)
-bed_control2<- read.table(paste(wd, "UK-Control-2.junctions.bed", sep=""),sep ="\t", header=FALSE, stringsAsFactors=FALSE)
-bed_control3<- read.table(paste(wd, "UK-Control-3.junctions.bed", sep=""),sep ="\t", header=FALSE, stringsAsFactors=FALSE)
-bed_control4<- read.table(paste(wd, "UK-Control-4.junctions.bed", sep=""),sep ="\t", header=FALSE, stringsAsFactors=FALSE)
-bed_control5<- read.table(paste(wd, "UK-Control-5.junctions.bed", sep=""),sep ="\t", header=FALSE, stringsAsFactors=FALSE)
-
-```
-
-
-Function that to convert add gene IDs to bed file and select gene of interest
-```{r}
-#get all known genes as Genomic ranges object
-genes<-genes(TxDb.Hsapiens.UCSC.hg19.knownGene)
-
 #Function to convert bed--> genomic ranges --> add gene IDs --> select gene ID of interest
-GetJunctionGeneID<- function(bed, genes, GeneID) {
+GetJunctionGeneID<- function(bed, genes, GeneIDs) {
   #Set column names
   colnames(bed)<- c("Chrom", "Start", "End", "Name", "Score", "Strand", "ThickStart", "ThickEnd","ItemRGB", "BlockCount", "BlockSizes", "BlockStarts")
   #Convert bed file to genomic ranges, add score as metadata column
@@ -44,260 +27,146 @@ GetJunctionGeneID<- function(bed, genes, GeneID) {
   mcols(ranges) <- DataFrame(mcols(ranges), geneid)
   
   Junctions_GeneIDs<- as.data.frame(ranges)
-  GeneID<- paste("\\b", GeneID, "\\b", sep="")
-  GeneJunctions_GeneIDs<- Junctions_GeneIDs[grep(GeneID, Junctions_GeneIDs$geneid),]
+  GeneJunctions_GeneIDs<- Junctions_GeneIDs[Junctions_GeneIDs$geneid %in% GeneIDs,]
   return(GeneJunctions_GeneIDs)
 }
-```
 
-
-Get TTN junctions for all 7 samples
-```{r}
-TTN_Junctions_Sample2<- GetJunctionGeneID(bed_s2, genes, "7273") #775 junctions
-TTN_Junctions_Sample9<- GetJunctionGeneID(bed_s9, genes, "7273") #591 junctions
-
-TTN_Junctions_Control1<- GetJunctionGeneID(bed_control1, genes, "7273") #668 junctions
-TTN_Junctions_Control2<- GetJunctionGeneID(bed_control2, genes, "7273") #727 junctions
-TTN_Junctions_Control3<- GetJunctionGeneID(bed_control3, genes, "7273") #633 junctions
-TTN_Junctions_Control4<- GetJunctionGeneID(bed_control4, genes, "7273") #624 Junctions
-TTN_Junctions_Control5<- GetJunctionGeneID(bed_control5, genes, "7273") #625 junctions
-
-```
-
-Get list of all TTN junctions found in sample 2 or sample 9 but NOT found in any of the controls
-```{r}
-#List of all TTN junctions in controls
-ControlTTNJunctions<- unique(c(TTN_Junctions_Control1$Name, TTN_Junctions_Control2$Name, TTN_Junctions_Control3, TTN_Junctions_Control4, TTN_Junctions_Control5))
-
-#junctions in sample 2 that are not in controls
-ControlJunctionsInSample2<- TTN_Junctions_Sample2$Name %in% ControlTTNJunctions
-Sample2UniqueTTNJunctions<- TTN_Junctions_Sample2[!ControlJunctionsInSample2,] #127 unique sample 2 junctions
-
-#junctions in sample 9 that are not in controls
-ControlJunctionsInSample9<- TTN_Junctions_Sample9$Name %in% ControlTTNJunctions
-Sample9UniqueTTNJunctions<- TTN_Junctions_Sample9[!ControlJunctionsInSample9,] #46 unique sample 9 junctions
-```
-
-Additional filtering of the two lists of unique junctions
-```{r}
-#At least 2 reads to support junction
-UniqueSample2_Depth<- Sample2UniqueTTNJunctions[Sample2UniqueTTNJunctions$Score>2,] #53 pass threshold
-UniqueSample9_Depth<- Sample9UniqueTTNJunctions[Sample9UniqueTTNJunctions$Score>2,] #19 pass threshold
-
-#Not found in the other sample
-SuperUniqueSample2<- UniqueSample2_Depth[!(UniqueSample2_Depth$Name %in% TTN_Junctions_Sample9),] #Still 53
-SuperUniqueSample9<- UniqueSample9_Depth[!(UniqueSample9_Depth$Name %in% TTN_Junctions_Sample2),] #still 19
-```
-
-```{r}
-#For sample 9: our "positive control" splice site chr2:179496028-179497001 is not showing up in this list.
-
-#It's removed when we filter by controls. So what controls have this splice site?
-TTN_Junctions_Control1[grep("chr2:179496028-179497001", TTN_Junctions_Control1$Name),] #4
-TTN_Junctions_Control2[grep("chr2:179496028-179497001", TTN_Junctions_Control2$Name),] #0
-TTN_Junctions_Control3[grep("chr2:179496028-179497001", TTN_Junctions_Control3$Name),] #0
-TTN_Junctions_Control4[grep("chr2:179496028-179497001", TTN_Junctions_Control4$Name),] #0
-TTN_Junctions_Control5[grep("chr2:179496028-179497001", TTN_Junctions_Control5$Name),] #0
-#Only control 1 has it, and at very low levels. When filtering junctions because they're found in controls, should either set a threshold to only count when controls have higher depth (i.e., at least 10 reads supporting) or when found in more than 1 control. Either of these thresholds would have resulted in this junction being discovered.
-
-#In samples 2 and 9
-TTN_Junctions_Sample2[grep("chr2:179496028-179497001", TTN_Junctions_Sample2$Name),] #8
-TTN_Junctions_Sample9[grep("chr2:179496028-179497001", TTN_Junctions_Sample9$Name),] #605
-
-#For sample 2: our "positive control" splice site is at the region chr2:179,602,998-179,603,177 chr2:179602817-179604260
-#In this region, there should be several splice variants.
-#We did actually find this:
-sample2_Pos<- makeGRangesFromDataFrame(UniqueSample2_Depth)
-values(sample2_Pos)<- DataFrame(Score=UniqueSample2_Depth$Score, Name=UniqueSample2_Depth$Name)
-
-PosControl<-GRanges(seqnames =Rle(c("chr2"), c(2)),
-                    ranges =IRanges(179602817, end = 179604260),
-                    strand =Rle(strand(c("-")),c(1)))
-
-Sample2_AtPos<-as.data.frame(subsetByOverlaps(sample2_Pos,PosControl)) #11 junctions that OVERLAP the region of interest. 
-
-Sample2_AtPos
-#Looking at these junctions in IGV, the last 3 are actually at this junction, not spreading way over across this junction
-#chr2:179603079-179603867
-#chr2:179603167-179603867
-#chr2:179603229-179603867
-
-#So: these 3 junctions are ones we wanted to end up with. Looking at the bed file in IGV, I also can't see any that we would want to mark as interesting in this area but didn't make it through the filter
-```
-
-So for sample 9, we need to decrease the stringency of our control filters to allow for at least 1 control sample having a couple reads supporting that junction, and still mark it interesting
-
-
-
-For sample 2, the question is: how do we increase the filter to get rid of all those other ones we're not interested in?
-
-Some ideas:
-1) Don't look at junctions that span too far. Kind of arbitrary, and may not be the case in all. But if a junction is spanning >10kb, it's probably just random mapping
-2) Increase the score filters- junctions with fewer than 10 reads aren't likely to be interesting, unless we're REALLY affecting expression by messing with splicing. So may not want to do this.
-3) Set a similar filter as in the paper- one side of the junction has to be canonical. We could define canonical as occurring in the control set a bunch of times- like at least 100 depth
-4) Compare it to the other samples- like paper, that junction has to have highest depth in that sample, by at least a factor of 2
-
-
-```{r}
-#Discovering positive control splice site in sample 9: decreasing stringency of control filters
-
-#Take list of all junctions found in controls --> to data.frame with 5 columns (1 for each control sample) for each junction. Include the number of reads that support that junction for each sample, entering a 0 if it doesn't appear
-Merge1_2<- merge(TTN_Junctions_Control1[,6:7],TTN_Junctions_Control2[,6:7], all=TRUE, by= "Name")
-Merge3<- merge(TTN_Junctions_Control3[,6:7], Merge1_2, all=TRUE,by="Name")
-Merge4<- merge(TTN_Junctions_Control4[,6:7], Merge3, all=TRUE,by="Name")
-Merge5<- merge(TTN_Junctions_Control5[,6:7], Merge4, all=TRUE,by="Name")
-colnames(Merge5)<- c("Name", "Score_Control5", "Score_Control4", "Score_Control3", "Score_Control2", "Score_Control1")
-
-#Convert NA to 0
-Merge5[is.na(Merge5)]<- 0
-
-#Add column with maximum score for each junction
-Merge5$Max<- rowMax(as.matrix(Merge5[,2:6]))
-
-#Add column with Number of samples that have that junction
-Merge5$SamplesWithJunction<- rowSums(Merge5[,2:6]>0)
-
-#Get list of junctions to NOT look at in sample 9: Appears in >1 control samples + supported by > 10 reads
-ControlJunctions_Filtered<- Merge5[Merge5$Max>10,]
-ControlJunctions_Filtered<- ControlJunctions_Filtered[ControlJunctions_Filtered$SamplesWithJunction>1,]
-#Down to 464 junctions- removed 434 junctions from "controls" list
-
-#junctions in sample 9 that are not in filtered control list
-ControlJunctionsInSample9<- TTN_Junctions_Sample9$Name %in% ControlJunctions_Filtered$Name
-Sample9UniqueTTNJunctions<- TTN_Junctions_Sample9[!ControlJunctionsInSample9,] #160 sample 9 junctions NOT in filtered controls list
-
-#Filtering unique sample 9 junctions by depth
-UniqueSample9_Depth<- Sample9UniqueTTNJunctions[Sample9UniqueTTNJunctions$Score>2,] #56 pass threshold
-UniqueSample9_Depth<- Sample9UniqueTTNJunctions[Sample9UniqueTTNJunctions$Score>20,] #1 passes threshold
-
-UniqueSample9_Depth[grep("chr2:179496028-179497001", UniqueSample9_Depth$Name),]
-
-#With these new control filters, this "positive control" junction for sample 9 can now be seen in our sample 9 "shortlist"
-#Also: this junction is supported by 605 reads in sample 9. The next highest score in our shortlist is 11. If we do more stringent depth filtering to narrow down shortlist even more, (score>20), we're left with only 1 junction- our positive control.
-
-
-#Filtering sample 2 based on filterd control list --> more stringent depth
-
-#junctions in sample 2 that are not in filtered control list
-ControlJunctionsInSample2<- TTN_Junctions_Sample2$Name %in% ControlJunctions_Filtered$Name
-Sample2UniqueTTNJunctions<- TTN_Junctions_Sample2[!ControlJunctionsInSample2,] #319 sample 2 junctions NOT in filtered controls list
-
-#Filtering unique sample 2 junctions by depth
-UniqueSample2_Depth<- Sample2UniqueTTNJunctions[Sample2UniqueTTNJunctions$Score>2,] #139 pass threshold
-UniqueSample2_Depth<- Sample2UniqueTTNJunctions[Sample2UniqueTTNJunctions$Score>20,] #5 pass threshold
-
-#Only 5 pass threshold. So just filtering based on occurence in controls and depth might be a quick and dirty way to find interesting titin junctions to look at more closely in IGV.
-
-#Repeating this analysis for the other samples.
-```
-
-
-Import bed files: samples 1, 3-8, 11-13, 15-19 (samples 2 and 9 already read in, samples 10 and 14 have no bed file)
-```{r}
-wd<- "//Cifs2/rcdata$/UKRNASeq/PathogenicSpliceSiteAnalysis/Junctions.bed/"
-bed_s1<- read.table(paste(wd, "1.junctions.bed", sep=""),sep ="\t", header=FALSE, stringsAsFactors=FALSE)
-bed_s3<- read.table(paste(wd, "3.junctions.bed", sep=""),sep ="\t", header=FALSE, stringsAsFactors=FALSE)
-bed_s4<- read.table(paste(wd, "4.junctions.bed", sep=""),sep ="\t", header=FALSE, stringsAsFactors=FALSE)
-bed_s5<- read.table(paste(wd, "5.junctions.bed", sep=""),sep ="\t", header=FALSE, stringsAsFactors=FALSE)
-bed_s6<- read.table(paste(wd, "6.junctions.bed", sep=""),sep ="\t", header=FALSE, stringsAsFactors=FALSE)
-bed_s7<- read.table(paste(wd, "7.junctions.bed", sep=""),sep ="\t", header=FALSE, stringsAsFactors=FALSE)
-bed_s8<- read.table(paste(wd, "8.junctions.bed", sep=""),sep ="\t", header=FALSE, stringsAsFactors=FALSE)
-bed_s11<- read.table(paste(wd, "11.junctions.bed", sep=""),sep ="\t", header=FALSE, stringsAsFactors=FALSE)
-bed_s12<- read.table(paste(wd, "12.junctions.bed", sep=""),sep ="\t", header=FALSE, stringsAsFactors=FALSE)
-bed_s13<- read.table(paste(wd, "13.junctions.bed", sep=""),sep ="\t", header=FALSE, stringsAsFactors=FALSE)
-bed_s15<- read.table(paste(wd, "15.junctions.bed", sep=""),sep ="\t", header=FALSE, stringsAsFactors=FALSE)
-bed_s16<- read.table(paste(wd, "16.junctions.bed", sep=""),sep ="\t", header=FALSE, stringsAsFactors=FALSE)
-bed_s17<- read.table(paste(wd, "17.junctions.bed", sep=""),sep ="\t", header=FALSE, stringsAsFactors=FALSE)
-bed_s18<- read.table(paste(wd, "18.junctions.bed", sep=""),sep ="\t", header=FALSE, stringsAsFactors=FALSE)
-bed_s19<- read.table(paste(wd, "19.junctions.bed", sep=""),sep ="\t", header=FALSE, stringsAsFactors=FALSE)
-```
-
-Get Titin junctions
-```{r}
-TTN_Junctions_Sample1<- GetJunctionGeneID(bed_s1, genes, "7273") #458 junctions
-TTN_Junctions_Sample3<- GetJunctionGeneID(bed_s3, genes, "7273") #694 junctions
-TTN_Junctions_Sample4<- GetJunctionGeneID(bed_s4, genes, "7273") #632 junctions
-TTN_Junctions_Sample5<- GetJunctionGeneID(bed_s5, genes, "7273") #624 junctions
-TTN_Junctions_Sample6<- GetJunctionGeneID(bed_s6, genes, "7273") #534 junctions
-TTN_Junctions_Sample7<- GetJunctionGeneID(bed_s7, genes, "7273") #621 junctions
-TTN_Junctions_Sample8<- GetJunctionGeneID(bed_s8, genes, "7273") #645 junctions
-TTN_Junctions_Sample11<- GetJunctionGeneID(bed_s11, genes, "7273") #583 junctions
-TTN_Junctions_Sample12<- GetJunctionGeneID(bed_s12, genes, "7273") #577 junctions
-TTN_Junctions_Sample13<- GetJunctionGeneID(bed_s13, genes, "7273") #617 junctions
-TTN_Junctions_Sample15<- GetJunctionGeneID(bed_s15, genes, "7273") #558
-TTN_Junctions_Sample16<- GetJunctionGeneID(bed_s16, genes, "7273") #696
-TTN_Junctions_Sample17<- GetJunctionGeneID(bed_s17, genes, "7273") #558
-TTN_Junctions_Sample18<- GetJunctionGeneID(bed_s18, genes, "7273") #587
-TTN_Junctions_Sample19<- GetJunctionGeneID(bed_s19, genes, "7273") #657
-```
-
-Write function that filter junctions based on pre-built control list of junctions + depth
-```{r}
+#Write function that filters junctions based on pre-built control list of junctions + depth
 FilterJunctions<- function(ControlJunctions, SampleJunctions, DepthFilter){
+  #Get rid of any in control list
   ControlJunctionsInSample<- SampleJunctions$Name %in% ControlJunctions$Name
   UniqueTTNJunctions<- SampleJunctions[!ControlJunctionsInSample,]
+  
+  #Get rid of any with fewer reads supporting it than the depth filter
   UniqueSample_Depth<- UniqueTTNJunctions[UniqueTTNJunctions$Score>DepthFilter,]
   print(nrow(UniqueSample_Depth))
   return(UniqueSample_Depth)
 }
-```
 
-Get filtered list of junctions for each sample: DepthThreshold>2/DepthThreshold>20
-If more than 3 numbers in list, middle number is depth threshold>10
-```{r}
-Sample1_FilteredJunctions<- FilterJunctions(ControlJunctions_Filtered, TTN_Junctions_Sample1, 2) #4/0
-Sample2_FilteredJunctions<- FilterJunctions(ControlJunctions_Filtered, TTN_Junctions_Sample2, 2) #139/5
-Sample3_FilteredJunctions<- FilterJunctions(ControlJunctions_Filtered, TTN_Junctions_Sample3, 2) #89/1
-Sample4_FilteredJunctions<- FilterJunctions(ControlJunctions_Filtered, TTN_Junctions_Sample4, 2) #58/3
-Sample5_FilteredJunctions<- FilterJunctions(ControlJunctions_Filtered, TTN_Junctions_Sample5, 2) #58/1
-Sample6_FilteredJunctions<- FilterJunctions(ControlJunctions_Filtered, TTN_Junctions_Sample6, 2) #17/1/0
-Sample7_FilteredJunctions<- FilterJunctions(ControlJunctions_Filtered, TTN_Junctions_Sample7, 2) #50/2/0
-Sample8_FilteredJunctions<- FilterJunctions(ControlJunctions_Filtered, TTN_Junctions_Sample8, 2) #72/3/0
-Sample9_FilteredJunctions<- FilterJunctions(ControlJunctions_Filtered, TTN_Junctions_Sample9, 2) #56/1
-Sample11_FilteredJunctions<- FilterJunctions(ControlJunctions_Filtered, TTN_Junctions_Sample11, 2) #42/2/0
-Sample12_FilteredJunctions<- FilterJunctions(ControlJunctions_Filtered, TTN_Junctions_Sample12, 2) #35/1/0
-Sample13_FilteredJunctions<- FilterJunctions(ControlJunctions_Filtered, TTN_Junctions_Sample13, 2) #47/1
-Sample15_FilteredJunctions<- FilterJunctions(ControlJunctions_Filtered, TTN_Junctions_Sample15, 2) #38/1/0
-Sample16_FilteredJunctions<- FilterJunctions(ControlJunctions_Filtered, TTN_Junctions_Sample16, 2) #90/4
-Sample17_FilteredJunctions<- FilterJunctions(ControlJunctions_Filtered, TTN_Junctions_Sample17, 2) #28/1/0
-Sample18_FilteredJunctions<- FilterJunctions(ControlJunctions_Filtered, TTN_Junctions_Sample18, 2) #36/0/0
-Sample19_FilteredJunctions<- FilterJunctions(ControlJunctions_Filtered, TTN_Junctions_Sample19, 2) #57/1
+#Alternative to above junction- rather than setting a depth filter, filter junctions based on the mean depth of junctions of that gene of that sample. Also removes any in control list.
+FilterJunctions_BasedOnMeanDepth<- function(ControlJunctions, SampleJunctions, Percentage){
+  SampleJunctions$geneid<- as.character(SampleJunctions$geneid)
+  #Get rid of any with fewer reads supporting it than 10% of the mean number of reads supporting junctions 
+  #of THAT GENE in THAT SAMPLE
+ SampleJunctions_Depth<-as.data.frame(group_by(SampleJunctions, geneid) %>% mutate(mean=mean(Score))) %>% filter(Score>(mean*Percentage))
+  
+  #Get rid of any in control list
+  ControlJunctionsInSample<- SampleJunctions_Depth$Name %in% ControlJunctions$Name
+  UniqueTTNJunctions<- SampleJunctions_Depth[!ControlJunctionsInSample,]
+}
 ```
 
 
-Merge data together, prep for exporting
+#Filtering junctions in all samples
+
+Filter optimization described in PathogenicSpliceSiteIdentification_FilterOptimization.Rmd
+
+Import bed files: samples 1, 3-8, 11-13, 15-19 (samples 2 and 9 already read in, samples 10 and 14 have no bed file)
+Select just junctions of interest
+
+Read in bed files
 ```{r}
-#Get list of all junction data frames- filtered by score >2
-JunctionsToMerge<-list(Sample1_FilteredJunctions,
-                       Sample2_FilteredJunctions, 
-                       Sample3_FilteredJunctions, 
-                       Sample4_FilteredJunctions,
-                       Sample5_FilteredJunctions,
-                       Sample6_FilteredJunctions,
-                       Sample7_FilteredJunctions,
-                       Sample8_FilteredJunctions,
-                       Sample9_FilteredJunctions,
-                       Sample11_FilteredJunctions,
-                       Sample12_FilteredJunctions,
-                       Sample13_FilteredJunctions,
-                       Sample15_FilteredJunctions,
-                       Sample16_FilteredJunctions,
-                       Sample17_FilteredJunctions,
-                       Sample18_FilteredJunctions,
-                       Sample19_FilteredJunctions)
-#Select just width, score, and name columns
-JunctionsToMerge<-lapply(JunctionsToMerge, function(x) (x[,c(4,6,7)]))
+#For novel tx alignment
+wd<- "//Cifs2/rcdata$/UKRNASeq/RawFiles/Bed/"
+#For Original alignment
+#wd<- "//Cifs2/rcdata$/UKRNASeq/PathogenicSpliceSiteAnalysis/Junctions.bed/"
 
-#Change column names of dataframe in list so they're named according to sample
-JunctionsToMerge2<-lapply(seq_along(JunctionsToMerge), function(i) {
-        colnames(JunctionsToMerge[[i]])<-c(paste("width_", i, sep=""), paste("score_", i, sep=""), "Name");JunctionsToMerge[[i]] })
+#get list of samples needed
+Samples<-c(1:9,11:13,15:19)
+FileList<- paste(wd, Samples, ".junctions.bed", sep="")
+ControlFileList<- paste(wd,"UK-Control-", c(1:5), ".junctions.bed", sep="")
 
-#merge all dataframes together
-multi_full <- Reduce(
-  function(x, y) merge(x, y, all = TRUE, by= "Name"), JunctionsToMerge2)
+#Read in bed files
+AllBed<- lapply(FileList, read.table, sep="\t", header=FALSE, stringsAsFactors=FALSE)
+AllControlBed<- AllBed<- lapply(ControlFileList, read.table, sep="\t", header=FALSE, stringsAsFactors=FALSE)
 ```
 
+
+#Filter bed files based on:
+  1) genes of interest
+  2) Junctions not in controls list (controls list filtered for present in < 2 samples + <10 reads)
+  3) Depth
+
+
+Get junctions in genes of interest + create controls list
 ```{r}
-write.csv(multi_full, paste(wd, "AllSamples_PotentialPathogenicJunctions_FilteredControlsRemoved_DepthGreaterThan2.csv", sep=""))
+#Set genes of interest
+GOI<- c("7273","4000", "4624","4625", "88") 
+#TTN, LMNA, MYH6, MYH7, ACTN2, 
+
+#Get Genes of interest junctions, in CM samples
+AllGOIJunctions<- lapply(AllBed, GetJunctionGeneID, genes=genes, GeneIDs=GOI)
+
+#Create controls list: Get junctions in genes of interest in controls, then filter to get final list of junctions in controls to remove from CM group
+  #Get junctions
+  AllGOIControlJunctions<- lapply(AllControlBed, GetJunctionGeneID, genes=genes, GeneIDs=GOI)
+  
+  #Filter control junctions
+    #Take list of all junctions found in controls --> to data.frame with 5 columns (1 for each control sample) for each
+    #junction. Include the number of reads that support that junction for each sample, entering a 0 if it doesn't appear
+    AllGOIControlJunctions<-lapply(AllGOIControlJunctions, function(x){x[,6:7]})
+    for (i in 1:length(AllGOIControlJunctions)){
+      colnames(AllGOIControlJunctions[[i]])<- c(paste("Score_", i,sep=""), "Name")
+    }
+    
+    AllGOIControlJunctions_Merged<- merge(AllGOIControlJunctions[[1]], 
+                                          AllGOIControlJunctions[[2]], by="Name", all=TRUE)
+    AllGOIControlJunctions_Merged<- merge(AllGOIControlJunctions_Merged, 
+                                          AllGOIControlJunctions[[3]], by="Name", all=TRUE)
+    AllGOIControlJunctions_Merged<- merge(AllGOIControlJunctions_Merged, 
+                                          AllGOIControlJunctions[[4]], by="Name", all=TRUE)
+    AllGOIControlJunctions_Merged<- merge(AllGOIControlJunctions_Merged, 
+                                          AllGOIControlJunctions[[5]], by="Name", all=TRUE)
+    #1067 total junctions
+    
+    #Convert NA to 0
+    AllGOIControlJunctions_Merged[is.na(AllGOIControlJunctions_Merged)]<- 0
+    
+    #Add column with maximum score for each junction
+    AllGOIControlJunctions_Merged$Max<- rowMax(as.matrix(AllGOIControlJunctions_Merged[,2:6]))
+    
+    #Add column with Number of samples that have that junction
+    AllGOIControlJunctions_Merged$SamplesWithJunction<- rowSums(AllGOIControlJunctions_Merged[,2:6]>0)
+    
+    #Get list of junctions to NOT look at in sample 9: Appears in >1 control samples + supported by > 10 reads
+    ControlJunctions_Filtered<- AllGOIControlJunctions_Merged[AllGOIControlJunctions_Merged$Max>10,]
+    ControlJunctions_Filtered<- ControlJunctions_Filtered[ControlJunctions_Filtered$SamplesWithJunction>1,]
+
+```
+
+
+
+#Get filtered list of junctions for each sample
+```{r}
+AllFilteredJunctions<- lapply(AllGOIJunctions, FilterJunctions, ControlJunctions=ControlJunctions_Filtered, DepthFilter=20)
+```
+
+#Get filtered list using alternative filtering: based on mean read depth
+```{r}
+AllFilteredJunctions<- lapply(AllGOIJunctions, FilterJunctions_BasedOnMeanDepth, ControlJunctions=ControlJunctions_Filtered,.01)
+
+unlist(lapply(AllFilteredJunctions, nrow))
+```
+
+Merge data together for export
+```{r}
+#In each df, select just score, name, and gene id
+JunctionsSubset<- lapply(AllFilteredJunctions,function(x){x[,5:8]})
+
+#Get rid of any samples with junctions of interest
+SamplesSubset<-Samples[lapply(JunctionsSubset, nrow)>0]
+JunctionsSubset<- JunctionsSubset[lapply(JunctionsSubset, nrow)>0]
+
+#Add new column with gene ID
+for (i in 1:length(JunctionsSubset)){
+  JunctionsSubset[[i]]$Sample<- SamplesSubset[i]
+}
+
+multi_full<- do.call(rbind,JunctionsSubset)
+```
+
+
+```{r}
+write.csv(multi_full, paste(wd, "AllSamples_PotentialPathogenicJunctions_FilteredControlsRemoved_DepthBasedOnMean.01_TTN.LMNA.MYH6.MYH7.ACTN2.csv", sep=""))
 ```
 
