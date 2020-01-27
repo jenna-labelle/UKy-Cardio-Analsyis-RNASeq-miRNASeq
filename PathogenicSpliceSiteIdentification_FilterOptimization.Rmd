@@ -34,12 +34,51 @@ GetJunctionGeneID<- function(bed, genes, GeneIDs) {
 
 #Write function that filters junctions based on pre-built control list of junctions + depth
 FilterJunctions<- function(ControlJunctions, SampleJunctions, DepthFilter){
+  #Get rid of any in control list
   ControlJunctionsInSample<- SampleJunctions$Name %in% ControlJunctions$Name
   UniqueTTNJunctions<- SampleJunctions[!ControlJunctionsInSample,]
+  
+  #Get rid of any with fewer reads supporting it than the depth filter
   UniqueSample_Depth<- UniqueTTNJunctions[UniqueTTNJunctions$Score>DepthFilter,]
   print(nrow(UniqueSample_Depth))
   return(UniqueSample_Depth)
 }
+
+#Alternative to above junction- rather than setting a depth filter, filter junctions based on the mean depth of junctions of that gene of that sample. Also removes any in control list.
+FilterJunctions_BasedOnMeanDepth<- function(ControlJunctions, SampleJunctions, Percentage){
+  SampleJunctions$geneid<- as.character(SampleJunctions$geneid)
+  #Get rid of any with fewer reads supporting it than 10% of the mean number of reads supporting junctions 
+  #of THAT GENE in THAT SAMPLE
+ SampleJunctions_Depth<-as.data.frame(group_by(SampleJunctions, geneid) %>% mutate(mean=mean(Score))) %>% filter(Score>(mean*Percentage))
+  
+  #Get rid of any in control list
+  ControlJunctionsInSample<- SampleJunctions_Depth$Name %in% ControlJunctions$Name
+  UniqueTTNJunctions<- SampleJunctions_Depth[!ControlJunctionsInSample,]
+}
+
+#Function that splits "name" into two columns: splice site A and B, and concatanates with chromosome to give unique splice site
+SpliceSiteSplit<- function(Junctions){
+  AllJunctions<- unlist(lapply(strsplit(Junctions$Name, ":"), function(x){x[2]}))
+  SpliceSites<- strsplit(AllJunctions, "-")
+  SpliceSiteA<- unlist(lapply(SpliceSites, function(x){x[1]}))
+  SpliceSiteB<- unlist(lapply(SpliceSites, function(x){x[2]}))
+  Junctions$SpliceSiteA<- paste(Junctions$seqnames, SpliceSiteA,sep=":")
+  Junctions$SpliceSiteB<- paste(Junctions$seqnames, SpliceSiteB,sep=":")
+  return(Junctions)
+}
+
+#For determining canonoical sites: Get rid of any with fewer reads supporting it than some percentage of the mean number of reads supporting junctions of THAT GENE in THAT SAMPLE
+FilterControlJunctions_BasedOnMeanDepth<- function(Junctions, Percentage){
+  Junctions$geneid<- as.character(Junctions$geneid)
+ SampleJunctions_Depth<-as.data.frame(group_by(Junctions, geneid) %>% mutate(mean=mean(Score))) %>% filter(Score>(mean*Percentage))
+}
+
+#When determining canonical splice sites: group by splice site A or B and sum all of A or all of B- i.e., if an A splice site has 2 B splice sites, sum the scores for both sites for the A and keep separate for the B
+GetCanonicalSpliceSiteSum<-function(DepthFilteredJunctions, AorB){
+  SpliceSite<-paste("SpliceSite", AorB, sep="")
+  SummedSpliceA<- DepthFilteredJunctions %>% group_by_at(vars(SpliceSite))%>% summarize(MeanScore=sum(Score)) %>% as.data.frame
+}
+
 ```
 
 
@@ -62,6 +101,7 @@ bed_control4<- read.table(paste(wd, "UK-Control-4.junctions.bed", sep=""),sep ="
 bed_control5<- read.table(paste(wd, "UK-Control-5.junctions.bed", sep=""),sep ="\t", header=FALSE, stringsAsFactors=FALSE)
 ```
 
+#Filtering based on presence in control
 
 Get TTN junctions for all 7 samples
 ```{r}
@@ -93,6 +133,7 @@ ControlJunctionsInSample9<- TTN_Junctions_Sample9$Name %in% ControlTTNJunctions
 Sample9UniqueTTNJunctions<- TTN_Junctions_Sample9[!ControlJunctionsInSample9,] #46 unique sample 9 junctions
 ```
 
+#Filtering based on read depth support
 Additional filtering of the two lists of unique junctions
 ```{r}
 #At least 2 reads to support junction
@@ -104,6 +145,7 @@ SuperUniqueSample2<- UniqueSample2_Depth[!(UniqueSample2_Depth$Name %in% TTN_Jun
 SuperUniqueSample9<- UniqueSample9_Depth[!(UniqueSample9_Depth$Name %in% TTN_Junctions_Sample2),] #still 19
 ```
 
+#Do these filters allow for discovery of "positive control" splice sites in samples 2 and 9?
 ```{r}
 #For sample 9: our "positive control" splice site chr2:179496028-179497001 is not showing up in this list.
 
@@ -152,10 +194,8 @@ Some ideas:
 3) Set a similar filter as in the paper- one side of the junction has to be canonical. We could define canonical as occurring in the control set a bunch of times- like at least 100 depth
 4) Compare it to the other samples- like paper, that junction has to have highest depth in that sample, by at least a factor of 2
 
-
-```{r}
 #Discovering positive control splice site in sample 9: decreasing stringency of control filters
-
+```{r}
 #Take list of all junctions found in controls --> to data.frame with 5 columns (1 for each control sample) for each junction. Include the number of reads that support that junction for each sample, entering a 0 if it doesn't appear
 Merge1_2<- merge(TTN_Junctions_Control1[,6:7],TTN_Junctions_Control2[,6:7], all=TRUE, by= "Name")
 Merge3<- merge(TTN_Junctions_Control3[,6:7], Merge1_2, all=TRUE,by="Name")
@@ -190,9 +230,11 @@ UniqueSample9_Depth[grep("chr2:179496028-179497001", UniqueSample9_Depth$Name),]
 #With these new control filters, this "positive control" junction for sample 9 can now be seen in our sample 9 "shortlist"
 #Also: this junction is supported by 605 reads in sample 9. The next highest score in our shortlist is 11. If we do more stringent depth filtering to narrow down shortlist even more, (score>20), we're left with only 1 junction- our positive control.
 
+```
+
 
 #Filtering sample 2 based on filterd control list --> more stringent depth
-
+```{r}
 #junctions in sample 2 that are not in filtered control list
 ControlJunctionsInSample2<- TTN_Junctions_Sample2$Name %in% ControlJunctions_Filtered$Name
 Sample2UniqueTTNJunctions<- TTN_Junctions_Sample2[!ControlJunctionsInSample2,] #319 sample 2 junctions NOT in filtered controls list
@@ -202,6 +244,89 @@ UniqueSample2_Depth<- Sample2UniqueTTNJunctions[Sample2UniqueTTNJunctions$Score>
 UniqueSample2_Depth<- Sample2UniqueTTNJunctions[Sample2UniqueTTNJunctions$Score>20,] #5 pass threshold
 
 #Only 5 pass threshold. So just filtering based on occurence in controls and depth might be a quick and dirty way to find interesting titin junctions to look at more closely in IGV.
-
-#Repeating this analysis for the other samples.
 ```
+
+#Defining canonical junctions in control data set
+
+
+```{r}
+#get list of samples needed
+wd<- "//Cifs2/rcdata$/UKRNASeq/RawFiles/Bed/"
+ControlFileList<- paste(wd,"UK-Control-", c(1:5), ".junctions.bed", sep="")
+
+#Read in bed files
+AllControlBed<- AllBed<- lapply(ControlFileList, read.table, sep="\t", header=FALSE, stringsAsFactors=FALSE)
+
+#Set genes of interest
+GOI<- c("7273","4000", "4624","4625", "88") 
+#TTN, LMNA, MYH6, MYH7, ACTN2
+
+#Read in txdb- only needs to be done once
+txdb <- TxDb.Hsapiens.UCSC.hg19.knownGene
+  
+#Get full list of genes and genes of interest
+genes <- genes(TxDb.Hsapiens.UCSC.hg19.knownGene)
+
+#Get Genes of interest junctions
+AllGOIJunctions<- lapply(AllControlBed, GetJunctionGeneID, genes=genes, GeneIDs=GOI)
+
+#Split splice sites into separate, unique column
+AllSplitJunctions<- lapply(AllGOIJunctions, SpliceSiteSplit)
+
+#Filter all control junctions by depth
+AllDepthFilteredJunctions<- lapply(AllSplitJunctions, FilterControlJunctions_BasedOnMeanDepth, Percentage=.01)
+```
+
+
+Combine A and B splice sites for all controls into two dataframes
+If an A/B splice site occurs more than once in a control, the score values are summed
+Only keep splice sites that occur in ALL controls
+
+```{r}
+#Get all A and B spice sites (summed) for each sample
+AllASpliceSites<-lapply(AllDepthFilteredJunctions, GetCanonicalSpliceSiteSum, "A")
+AllBSpliceSites<-lapply(AllDepthFilteredJunctions, GetCanonicalSpliceSiteSum, "B")
+
+#Rename columns to include sample info
+for (i in 1:length(AllASpliceSites)){
+  colnames(AllASpliceSites[[i]])<- c("SpliceSiteA", paste(i, "MeanScore", sep=":"))
+}
+
+for (i in 1:length(AllBSpliceSites)){
+  colnames(AllBSpliceSites[[i]])<- c("SpliceSiteB", paste(i, "MeanScore", sep=":"))
+}
+
+#Merge all A splice sites into one df, all B into one df
+MergedASpliceSites<- AllASpliceSites %>% Reduce(function(dtf1, dtf2) left_join(dtf1, dtf2, by="SpliceSiteA"), .) %>% na.omit
+  
+MergedBSpliceSites<- AllBSpliceSites %>% Reduce(function(dtf1, dtf2) left_join(dtf1, dtf2, by="SpliceSiteB"), .) %>% na.omit
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
