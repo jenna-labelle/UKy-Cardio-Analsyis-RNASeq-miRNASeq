@@ -5,12 +5,14 @@ output: html_notebook
 Import libraries
 ```{r}
 suppressPackageStartupMessages(library(Homo.sapiens))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(org.Hs.eg.db))
 ```
 
 
 Functions
 ```{r}
-#Function to convert bed--> genomic ranges --> add gene IDs --> select gene ID of interest
+#Convert bed--> genomic ranges --> add gene IDs --> select gene ID of interest
 GetJunctionGeneID<- function(bed, genes, GeneIDs) {
   #Set column names
   colnames(bed)<- c("Chrom", "Start", "End", "Name", "Score", "Strand", "ThickStart", "ThickEnd","ItemRGB", "BlockCount", "BlockSizes", "BlockStarts")
@@ -31,7 +33,7 @@ GetJunctionGeneID<- function(bed, genes, GeneIDs) {
   return(GeneJunctions_GeneIDs)
 }
 
-#Write function that filters junctions based on pre-built control list of junctions + depth
+#Filter junctions based on pre-built control list of junctions + depth
 FilterJunctions<- function(ControlJunctions, SampleJunctions, DepthFilter){
   #Get rid of any in control list
   ControlJunctionsInSample<- SampleJunctions$Name %in% ControlJunctions$Name
@@ -43,7 +45,7 @@ FilterJunctions<- function(ControlJunctions, SampleJunctions, DepthFilter){
   return(UniqueSample_Depth)
 }
 
-#Alternative to above junction- rather than setting a depth filter, filter junctions based on the mean depth of junctions of that gene of that sample. Also removes any in control list.
+#Alternative to above function- rather than setting a depth filter, filter junctions based on the mean depth of junctions of that gene of that sample. Also removes any in control list.
 FilterJunctions_BasedOnMeanDepth<- function(ControlJunctions, SampleJunctions, Percentage){
   SampleJunctions$geneid<- as.character(SampleJunctions$geneid)
   #Get rid of any with fewer reads supporting it than 10% of the mean number of reads supporting junctions 
@@ -72,14 +74,13 @@ FilterControlJunctions_BasedOnMeanDepth<- function(Junctions, Percentage){
  SampleJunctions_Depth<-as.data.frame(group_by(Junctions, geneid) %>% mutate(mean=mean(Score))) %>% filter(Score>(mean*Percentage))
 }
 
-#When determining canonical splice sites: group by splice site A or B and sum all of A or all of B- i.e., if an A splice site has 2 B splice sites, sum the scores for both sites for the A and keep separate for the B
+#For determining canonical splice sites: group by splice site A or B and sum all of A or all of B- i.e., if an A splice site has 2 B splice sites, sum the scores for both sites for the A and keep separate for the B
 GetCanonicalSpliceSiteSum<-function(DepthFilteredJunctions, AorB){
   SpliceSite<-paste("SpliceSite", AorB, sep="")
   SummedSpliceA<- DepthFilteredJunctions %>% group_by_at(vars(SpliceSite))%>% summarize(MeanScore=sum(Score)) %>% as.data.frame
 }
 
 #For adding column to partially filtered CM junctions annotating whether each side of the junction is "canonical" and what the mean depth of that "canonical" junction is in controls
-
 FilterOutBothNeitherCanonical<- function(SplitJunction, MergedAControlSpliceSites, MergedBControlSpliceSites){
   #Splice site A not in list:
   SplitJunction$A_Canonical<- SplitJunction$SpliceSiteA %in% MergedAControlSpliceSites$SpliceSiteA
@@ -131,7 +132,7 @@ ControlFileList<- paste(wd,"UK-Control-", c(1:5), ".junctions.bed", sep="")
 
 #Read in bed files
 AllBed<- lapply(FileList, read.table, sep="\t", header=FALSE, stringsAsFactors=FALSE)
-#AllControlBed<- AllBed<- lapply(ControlFileList, read.table, sep="\t", header=FALSE, stringsAsFactors=FALSE)
+AllControlBed<- AllBed<- lapply(ControlFileList, read.table, sep="\t", header=FALSE, stringsAsFactors=FALSE)
 ```
 
 
@@ -149,9 +150,12 @@ txdb <- TxDb.Hsapiens.UCSC.hg19.knownGene
 #Get full list of genes and genes of interest
 genes <- genes(TxDb.Hsapiens.UCSC.hg19.knownGene)
 
-#Set genes of interest
-GOI<- c("7273","4000", "4624","4625", "88") 
-#TTN, LMNA, MYH6, MYH7, ACTN2, 
+#Input genes of interest- as gene name
+geneNames<- read.csv("//Cifs2/rcdata$/UKRNASeq/PathogenicSpliceSiteAnalysis/GenesofInterest.csv",header=FALSE)
+
+#Convert to entrez gene ids
+GOI<- unname(mapIds(org.Hs.eg.db, keys=as.character(geneNames$V1), column="ENTREZID",keytype="SYMBOL"))
+
 
 #Get Genes of interest junctions, in CM samples
 AllGOIJunctions<- lapply(AllBed, GetJunctionGeneID, genes=genes, GeneIDs=GOI)
@@ -163,19 +167,19 @@ AllGOIJunctions<- lapply(AllBed, GetJunctionGeneID, genes=genes, GeneIDs=GOI)
   #Filter control junctions
     #Take list of all junctions found in controls --> to data.frame with 5 columns (1 for each control sample) for each
     #junction. Include the number of reads that support that junction for each sample, entering a 0 if it doesn't appear
-    AllGOIControlJunctions<-lapply(AllGOIControlJunctions, function(x){x[,6:7]})
-    for (i in 1:length(AllGOIControlJunctions)){
-      colnames(AllGOIControlJunctions[[i]])<- c(paste("Score_", i,sep=""), "Name")
+    AllGOIControlJunctions_subset<-lapply(AllGOIControlJunctions, function(x){x[,6:7]})
+    for (i in 1:length(AllGOIControlJunctions_subset)){
+      colnames(AllGOIControlJunctions_subset[[i]])<- c(paste("Score_", i,sep=""), "Name")
     }
     
-    AllGOIControlJunctions_Merged<- merge(AllGOIControlJunctions[[1]], 
-                                          AllGOIControlJunctions[[2]], by="Name", all=TRUE)
+    AllGOIControlJunctions_Merged<- merge(AllGOIControlJunctions_subset[[1]], 
+                                          AllGOIControlJunctions_subset[[2]], by="Name", all=TRUE)
     AllGOIControlJunctions_Merged<- merge(AllGOIControlJunctions_Merged, 
-                                          AllGOIControlJunctions[[3]], by="Name", all=TRUE)
+                                          AllGOIControlJunctions_subset[[3]], by="Name", all=TRUE)
     AllGOIControlJunctions_Merged<- merge(AllGOIControlJunctions_Merged, 
-                                          AllGOIControlJunctions[[4]], by="Name", all=TRUE)
+                                          AllGOIControlJunctions_subset[[4]], by="Name", all=TRUE)
     AllGOIControlJunctions_Merged<- merge(AllGOIControlJunctions_Merged, 
-                                          AllGOIControlJunctions[[5]], by="Name", all=TRUE)
+                                          AllGOIControlJunctions_subset[[5]], by="Name", all=TRUE)
     #1067 total junctions
     
     #Convert NA to 0
@@ -198,6 +202,8 @@ AllGOIJunctions<- lapply(AllBed, GetJunctionGeneID, genes=genes, GeneIDs=GOI)
 #Get filtered list of junctions for each sample
 ```{r}
 AllFilteredJunctions<- lapply(AllGOIJunctions, FilterJunctions, ControlJunctions=ControlJunctions_Filtered, DepthFilter=2)
+sum(unlist(lapply(AllFilteredJunctions, nrow)))
+sum(unlist(lapply(AllFilteredJunctions, nrow)))
 ```
 
 #Get filtered list using alternative filtering: based on mean read depth
@@ -247,7 +253,7 @@ AllGOIControlJunctions<- lapply(AllControlBed, GetJunctionGeneID, genes=genes, G
 AllSplitControlJunctions<- lapply(AllGOIControlJunctions, SpliceSiteSplit)
 
 #Filter all control junctions by depth
-AllDepthFilteredControlJunctions<- lapply(AllSplitControlJunctions, FilterControlJunctions_BasedOnMeanDepth, Percentage=.05)
+AllDepthFilteredControlJunctions<- lapply(AllSplitControlJunctions, FilterControlJunctions_BasedOnMeanDepth, Percentage=.15)
 
 #Get all A and B spice sites (summed) for each sample
 AllAControlSpliceSites<-lapply(AllDepthFilteredControlJunctions, GetCanonicalSpliceSiteSum, "A")
@@ -270,11 +276,7 @@ MergedBControlSpliceSites<- AllBControlSpliceSites %>% Reduce(function(dtf1, dtf
 
 ```{r}
 nrow (MergedAControlSpliceSites) + nrow (MergedAControlSpliceSites)
-A_.01<-MergedAControlSpliceSites
-B_.01<-MergedBControlSpliceSites
 
-A_.05<-MergedAControlSpliceSites
-B_.05<-MergedBControlSpliceSites
 ```
 
 #Filter CM samples based on canonical junctions + Depth
@@ -296,8 +298,7 @@ sum(unlist(lapply(AllFilteredJunctions, nrow)))
 
 Filters 4 and 5:
 ```{r}
-#Split Name into Splice junctions A and B:
-AllSplitJunctions<- lapply(AllFilteredJunctions, SpliceSiteSplit)
+AllSplitJunctions<- lapply(AllFilteredJunctions[2:17], SpliceSiteSplit)
 
 #Add annotation detailing whether each side of the junction is "canonical" and what the mean depth for that canonical junction is (in controls)
 AllCanonicalAnnotatedJunctions<- lapply(AllSplitJunctions, FilterOutBothNeitherCanonical, MergedAControlSpliceSites,MergedBControlSpliceSites)
@@ -305,8 +306,6 @@ AllCanonicalAnnotatedJunctions<- lapply(AllSplitJunctions, FilterOutBothNeitherC
 #Select just junctions where exactly one side is canonical
 AllOneCanonicalJunctions<- lapply(AllCanonicalAnnotatedJunctions, function(x) {x[x$OneCanonical=="TRUE",]})
 
-sum(unlist(lapply(AllSplitJunctions, nrow)))
-sum(unlist(lapply(AllCanonicalAnnotatedJunctions, nrow)))
 sum(unlist(lapply(AllOneCanonicalJunctions, nrow)))
 
 ```
@@ -327,9 +326,11 @@ for (i in 1:length(NormScore)){
 }
 
 multi_full<- do.call(rbind,NormScore)
+
+nrow(multi_full[multi_full$NormScore>0.1,])
 ```
 
 ```{r}
-write.csv(multi_full, paste(wd, "AllFilteredCMJunctions_ControlRemoved10_Depth2_1CanSite_Can.05.csv"))
+write.csv(multi_full, paste(wd, "AllFilteredCMJunctions_ControlRemoved10_Depth2_1CanSite_Can.01_Full62GeneList.csv"))
 ```
 
