@@ -151,7 +151,7 @@ genes <- genes(TxDb.Hsapiens.UCSC.hg19.knownGene)
 
 #Input genes of interest- as gene name
 geneNames<- read.csv("//Cifs2/rcdata$/UKRNASeq/PathogenicSpliceSiteAnalysis/GenesofInterest.csv",header=FALSE)
-
+geneNames<-7273
 #Convert to entrez gene ids
 GOI<- unname(mapIds(org.Hs.eg.db, keys=as.character(geneNames$V1), column="ENTREZID",keytype="SYMBOL"))
 
