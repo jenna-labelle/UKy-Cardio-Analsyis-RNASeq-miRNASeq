@@ -1,0 +1,188 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+#Read in old data- merge together, get rid of genes where counts are 0 for all samples
+```{r}
+files<- c(1:19)
+OldData<- list()
+readwd<-"//Cifs2/rcdata$/UKRNASeq/RawCounts/ORIGINALRUN_NotInUse/"
+
+for (i in 1:length(files)){
+  OldData[[i]]<- read.table(paste(readwd, files[i], ".counts.GENES", sep=""))
+  colnames(OldData[[i]])<- c("gene", paste("S", files[i], sep=""))
+}
+
+AllOld<- OldData %>% Reduce(function(dtf1,dtf2) left_join(dtf1,dtf2,by="gene"), .)
+rownames(AllOld)<-AllOld$gene
+AllOld<-AllOld[,-1]
+colnames(AllOld)<- gsub("S", "X", colnames(AllOld))
+AllOld<- AllOld[rowSums(AllOld)>0,]
+
+```
+
+#Read in new data (actually used previously)
+
+```{r}
+#set working directory
+wd<- "//Cifs2/rcdata$/UKRNASeq/"
+
+#read in count data
+countsInput<- read.csv(paste(wd, "RawCounts/CountData.csv", sep =""))
+                       
+#reformat Counts data
+rownames(countsInput)<- countsInput$X
+countsInput<- countsInput[,-1]
+
+#Rename column data
+colnames(countsInput)<- gsub(".counts.*", "", colnames(countsInput))
+
+#Get rid of any genes with NA values, or where counts are 0 for that gene across all samples
+counts<- na.omit(countsInput)
+counts<- counts[rowSums(counts)>0,]
+```
+
+```{r}
+nrow(AllOld)
+nrow(counts)
+#more in new data
+
+#get old counts that occur in new counts data
+Old_inNew<- AllOld[rownames(AllOld) %in% rownames(counts),] #only gets rid of ~800
+
+#get new counts that occur in old counts data
+New_inOld<- counts[rownames(counts) %in% rownames(AllOld),]
+#now we have two datasets with identical genes
+
+#get rid of any samples in old that don't occur in new (10 and 14)
+OldFinal<-Old_inNew[,!(colnames(Old_inNew) %in% c("X10", "X14", "X4"))]
+
+#get rid of any samples in new that don't occur in old (controls)
+NewFinal<- New_inOld[,!(colnames(New_inOld) %in% c(paste("UK.Control.", 1:5, sep="")))]
+#now we have two datasets with identical samples
+
+#Sort both by gene
+NewFinal<-NewFinal[order(rownames(NewFinal)),]
+OldFinal<-OldFinal[order(rownames(OldFinal)),]
+
+#normalize to account for coverage differences in two runs- count/total *100,000 (for nicer numbers)
+NewNorm<- as.data.frame(apply(NewFinal, 2, function(x) {x/sum(x)*100000}))
+OldNorm<- as.data.frame(apply(OldFinal, 2, function (x) {x/sum(x) *100000}))
+
+OldNorm$genes<-rownames(OldNorm)
+OldNorm$genes<-rownames(OldNorm)
+
+
+#Function that takes two lists of counts of all genes for 1 sample, selects the top 100 most expressed in one of the list, and checks for the presence of these genes in the other
+CheckTopGenes<- function(OldList, NewList, N){
+  Old<- OldList[order(OldList, decreasing=TRUE)]
+}
+```
+
+Merge datasets
+```{r}
+#Rename samples, appending old or new. Merge together, based on gene
+Old<-OldFinal
+colnames(Old)<-paste(colnames(Old), "_Old",sep="")
+
+New<-NewFinal
+colnames(New)<-paste(colnames(New), "_New", sep="")
+
+AllCounts<- merge(Old,New,by=0)
+rownames(AllCounts)<-AllCounts$Row.names
+AllCounts<-AllCounts[,-1]
+AllCounts<-AllCounts[order(AllCounts$X1_Old, decreasing=TRUE),]
+#Remove no_feature
+AllCounts<-AllCounts[-1,]
+```
+
+
+Downsample and run DESeq2
+```{r}
+#downsample: set seed so results are replicable
+Counts_DS<- downsample.counts(AllCounts[,1:32], seed=42)
+
+#create DESeq2 object- just based on samplegroup (blockerstatus), will add samples to model later (i.e., pairwise analysis)
+dds_DS<- DESeqDataSetFromMatrix(countData=Counts_DS, 
+                             colData=meta, 
+                             design=~sampleGroup)
+
+
+#Create model that takes into account sample differences
+ddsMF_DS<- dds_DS
+design(ddsMF_DS)<- formula(~patient + sampleGroup)
+
+#run DESeq2
+dds_DS<- DESeq(ddsMF_DS)
+
+res_DS<-na.omit(results(dds_DS))
+sig_DS<- res_DS[res_DS$padj<0.05,]
+
+sigRaw_DS<- Counts_DS[rownames(Counts_DS)%in% rownames(sig_DS),]
+sigRaw_DS$OldMean<- rowMeans(sigRaw_DS[,1:16])
+sigRaw_DS$NewMean<-rowMeans(sigRaw_DS[,17:32])
+sigRaw_DS<-sigRaw_DS[order(sigRaw_DS$X1_Old, decreasing=TRUE),]
+
+#Plot, Excluding major outliers
+p<- ggplot(sigRaw_DS[-1,], aes(x=OldMean, y=NewMean))+
+  geom_point()+
+  xlim(0,3500)+
+  ylim(0,3500)+
+  geom_abline(slope-1,intercept=0)
+```
+
+
+Run DESeq2, non pairwise, downsampled
+```{r}
+dds_NP<- DESeqDataSetFromMatrix(countData=Counts_DS, 
+                             colData=meta, 
+                             design=~sampleGroup)
+dds_NP<- DESeq(dds_NP)
+
+res_NP<-na.omit(results(dds_NP))
+sig_NP<- res_DS[res_NP$padj<0.05,]
+
+sigRaw_NP<- Counts_DS[rownames(Counts_DS)%in% rownames(sig_NP),]
+sigRaw_NP$OldMean<- rowMeans(sigRaw_NP[,1:16])
+sigRaw_NP$NewMean<-rowMeans(sigRaw_NP[,17:32])
+sigRaw_NP<-sigRaw_NP[order(sigRaw_NP$X1_Old, decreasing=TRUE),]
+
+#Plot, Excluding major outliers
+p<- ggplot(sigRaw_NP, aes(x=OldMean, y=NewMean))+
+  geom_point()
+ 
+```
+
+
+Plotting expression of all genes
+```{r}
+AllCounts$OldMean<-rowMeans(AllCounts[,1:16])
+AllCounts$NewMean<-rowMeans(AllCounts[,17:32])
+AllCounts<-AllCounts[order(AllCounts$X1_Old, decreasing=TRUE),]
+
+#plot
+p<- ggplot(AllCounts[4:nrow(AllCounts),], aes(x=OldMean, y=NewMean))+
+  geom_point()+
+  xlim(0,120000)+
+  ylim(0,120000)+
+  geom_abline(slope-1,intercept=0)
+  
+```
+
+
+
+Plotting expression of all downsampled genes
+```{r}
+Counts_DS$OldMean<-rowMeans(Counts_DS[,1:16])
+Counts_DS$NewMean<-rowMeans(Counts_DS[,17:32])
+p<- ggplot(Counts_DS[1:nrow(Counts_DS),], aes(x=OldMean, y=NewMean))+
+  geom_point()+
+  #xlim(0,3500)+
+  #ylim(0,3500)+
+  geom_abline(slope-1,intercept=0)
+```
+
+
+
+
