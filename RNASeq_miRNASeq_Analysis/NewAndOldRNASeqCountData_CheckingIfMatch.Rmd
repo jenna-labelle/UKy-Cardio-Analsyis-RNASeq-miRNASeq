@@ -184,5 +184,28 @@ p<- ggplot(Counts_DS[1:nrow(Counts_DS),], aes(x=OldMean, y=NewMean))+
 ```
 
 
+```{r}
+#normalize for heatmap plotting
+rld<- rlog(dds_DS)
+```
+
+Plot heatmap
+```{r}
+#settings for heatmap
+subtractFromMin<- -1
+subtractFromMax<- 2.2
+lengthOut<- 100
+
+mat<- assay(rld)[rownames(sigRaw_DS),]
+mat<- mat - rowMeans(mat)
+mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
+
+
+#Create metadata- to be used to color code to show which group the sample belongs to
+metadata<- data.frame(Sample_Group=meta$sampleGroup, row.names=meta$sample,Sample=meta$patient)
+
+#plot heatmap
+p<-pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)), show_rownames = FALSE,annotation_col=metadata, border_color= NA)
+```
 
 
