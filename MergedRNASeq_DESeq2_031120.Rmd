@@ -1,0 +1,365 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Import libraries:
+```{r}
+suppressPackageStartupMessages(library(DESeq2))
+suppressPackageStartupMessages(library(viridis))
+suppressPackageStartupMessages(library(RColorBrewer))
+suppressPackageStartupMessages(library(pheatmap))
+suppressPackageStartupMessages(library(ggplot2))
+```
+
+
+
+
+Functions
+```{r}
+#Create DESeq2 object, check that metadata is correct, and run DESeq2
+RunDESeq2<- function(counts, meta){
+  #check that counts/meta data has samples in same order
+  print(all(rownames(meta) %in% colnames(counts)))
+  print(all(rownames(meta) == colnames(counts)))
+  
+  #create DESeq2 object
+  dds<- DESeqDataSetFromMatrix(countData=counts, 
+                               colData=meta, 
+                               design=~sampleGroup)
+  
+  #define levels- so that controls will always be used as reference group
+  dds$sampleGroup<- relevel(dds$sampleGroup, ref= "control")
+  
+  #run DE
+  dds<- DESeq(dds)
+  
+  return(dds)
+
+}
+
+#Normalize with variance stabilizing transformation, run and plot PCA
+PlotMyPCA<- function(dds, PC1Variance, PC2Variance){
+  vsd <- vst(dds, blind=FALSE)
+  PCAData<-DESeq2::plotPCA(vsd, intgroup="sampleGroup", returnData=TRUE)
+  PCAData$sampleGroup<- gsub("pos", "TTN+", PCAData$sampleGroup)
+  PCAData$sampleGroup<- gsub("neg", "TTN-", PCAData$sampleGroup)
+  
+  p<-ggplot(PCAData, aes(x=PC1, y=PC2, color=sampleGroup))+
+    geom_point(size=3)+
+    xlab(paste("PC1:", PC1Variance))+
+    ylab(paste("PC2:", PC2Variance))+
+    ggtitle("PCA: Controls vs TTN- vs TTN+")+
+    geom_text(aes(label=colnames(counts(dds)),hjust=0, vjust=0))+
+    theme_classic()
+  return(p)
+    
+  
+}
+
+#function that takes dds object and desired contrasts as input, outputs ordered results
+
+ContrastDGE<- function(contrasts, dds){
+  ContrastsUse<- c("sampleGroup", contrasts)
+  ContrastsResults<- na.omit(results(dds, contrast=ContrastsUse))
+  resOrdered<- ContrastsResults[order(ContrastsResults$padj),]
+  return(resOrdered)
+}
+
+
+
+```
+
+
+#Import raw counts for individual samples (difference sources, described below) and merge into one dataset
+```{r}
+#Three types of data: 
+  #1: samples run in both run 1 and run 2, fastqs merged --> alignment
+  #2: samples run in only run 1 (10 and 14)
+  #3: samples run in only run 2 (controls)
+
+extension<- ".counts.GENES"
+
+############
+#Dataset 1 #
+############
+
+#set list of files- merged files
+merged_readwd<- "D:/UKy/MergingRNASeq/MergedRuns_RawCounts/"
+merged_samples<- c(1:9,11:13,15:19)
+merged_files<-c(paste(merged_samples, "_Merged", extension,sep=""))
+
+#Read in counts data
+merged_AllCounts<-list()
+for (i in 1:length(merged_files)){
+  file<- read.table(paste(merged_readwd, merged_files[i], sep=""))
+  colnames(file)<- c("GeneID", paste("X", merged_samples[i], sep=""))
+  merged_AllCounts[[i]]<- file
+}
+
+############
+#Dataset 2 #
+############
+
+#set list of files- run 1 files (10 and 14)
+run1_readwd<- "//Cifs2/rcdata$/UKRNASeq/RawCounts/ORIGINALRUN_NotInUse/"
+run1_samples<- c(1:19) #S2 included for now- will change to merged set later
+run1_files<-c(paste(run1_samples, extension,sep=""))
+
+#Read in counts data
+run1_AllCounts<-list()
+for (i in 1:length(run1_files)){
+  file<- read.table(paste(run1_readwd, run1_files[i], sep=""))
+  colnames(file)<- c("GeneID", paste("X", run1_samples[i], sep=""))
+  run1_AllCounts[[i]]<- file
+}
+
+############
+#Dataset 3 #
+############
+
+#set list of files- run 2 files (controls)
+run2_readwd<- "//Cifs2/rcdata$/UKRNASeq/RawCounts/"
+run2_samples<- c(c(1:9, 11:13, 15:19),paste("UK-Control-", c(1:5), sep=""))
+run2_files<-c(paste(run2_samples, extension,sep=""))
+
+#Read in counts data
+run2_AllCounts<-list()
+for (i in 1:length(run2_files)){
+  file<- read.table(paste(run2_readwd, run2_files[i], sep=""))
+  colnames(file)<- c("GeneID", paste("X", run2_samples[i], sep=""))
+  colnames(file)[2]<- gsub("XUK", "UK",colnames(file)[2]) #removing "X" in column name, if it's for a control
+  run2_AllCounts[[i]]<- file
+}
+
+
+#Select just the samples from run 1 and run 2 to be used- that is, NON-MERGED samples. Needs to be at least Samples 10/14 from run 1 and controls from run 2
+#Run 1:
+run1_PickSamples<- paste("X", c(10,14),sep="")
+run1_SelectedSamples<- unlist(lapply(run1_AllCounts, function(x) {colnames(x)[2] %in% run1_PickSamples}))
+run1_SelectedSamples_Counts<- run1_AllCounts[run1_SelectedSamples]
+
+#Run 2:
+run2_PickSamples<- paste("UK-Control-", c(1:5), sep="")
+run2_SelectedSamples<- unlist(lapply(run2_AllCounts, function(x) {colnames(x)[2] %in% run2_PickSamples}))
+run2_SelectedSamples_Counts<- run2_AllCounts[run2_SelectedSamples]
+
+#Merge all counts together into one list, then into one DF
+AllCounts<- c(merged_AllCounts, run1_SelectedSamples_Counts, run2_SelectedSamples_Counts)
+counts<- AllCounts %>%
+    Reduce(function(dtf1,dtf2) left_join(dtf1,dtf2,by="GeneID"), .)
+
+#write to csv for later use
+write.csv(counts, paste(run2_readwd, "RawCounts_Run1S10.14_Run2Controls_AllOthersMerged.csv", sep=""))
+
+```
+
+
+
+
+Read in counts data (generated above), format, filter out very low counts nd "no_feature", and perform downsampling
+```{r}
+#read in count data
+countsInput<- read.csv(paste(run2_readwd, "RawCounts_Run1S10.14_Run2Controls_AllOthersMerged.csv", sep =""))
+
+countsInput<-countsInput[,c(1:11, 20, 12:14,21,15:19, 22:26)]
+                       
+#reformat Counts data
+rownames(countsInput)<- countsInput$GeneID
+countsInput<- countsInput[,3:ncol(countsInput)]
+
+#remove sample 10- too low of counts
+counts<- countsInput[,!(colnames(countsInput)%in% c("X10","X14"))]
+
+#Remove highest expressed "gene" - no_feature. Could throw off DE
+counts<-counts[!(rownames(counts) %in% "no_feature"),]
+
+#Get rid of any genes with NA values, or where counts are 0 for that gene across all samples
+counts<- na.omit(counts) #no NA values
+counts<- counts[rowSums(counts)>0,] 
+
+#downsample: set seed so results are replicable
+Counts_DS<- downsample.counts(counts, seed=42) #lowest is sample 14, at ~3.5 million mapped reads
+```
+
+
+Read in metadata
+```{r}
+#Read in metadata info
+wd<- "//Cifs2/rcdata$/UKRNASeq/"
+meta<- read.csv(paste(wd, "MetaData_AllSamples.csv",sep=""))
+rownames(meta)<- meta$Sample
+meta<- meta[,-1]
+meta<- meta[!(rownames(meta) %in% c(paste("X", c(10,14), sep=""))),] 
+
+#Change sample 3/4 to pos
+meta[3,2]<- "pos"
+meta[4,2]<- "pos"
+meta[5,2]<- "neg"
+meta[15,2]<-"neg"
+meta[1,2]<-"neg"
+```
+
+Run DESeq2 on Raw counts and downsampled counts
+```{r}
+#DESeq2 on raw counts
+dds_Raw<- RunDESeq2(counts, meta)
+
+#DESeq2 on downsampled counts
+dds_DS<- RunDESeq2(Counts_DS,meta)
+```
+
+Run and plot PCA for raw and DS counts
+```{r}
+PCA_Raw<- PlotMyPCA(dds_Raw, "fake", "fake")
+PCA_DS<- PlotMyPCA(dds_DS, "fake", "fake")
+```
+
+```{r}
+vsd <- vst(dds_Raw, blind=FALSE)
+  PCAData<-DESeq2::plotPCA(vsd, intgroup="sampleGroup", returnData=TRUE)
+  PCAData$sampleGroup<- gsub("pos", "TTN+", PCAData$sampleGroup)
+  PCAData$sampleGroup<- gsub("neg", "TTN-", PCAData$sampleGroup)
+  
+  p<-ggplot(PCAData, aes(x=PC1, y=PC2, color=sampleGroup))+
+    geom_point(size=3)+
+    xlab(paste("PC1:", PC1Variance))+
+    ylab(paste("PC2:", PC2Variance))+
+    ggtitle("PCA: Controls vs TTN- vs TTN+")+
+    geom_text(aes(label=colnames(counts(dds)),hjust=0, vjust=0))+
+    theme_classic()
+  return(p)
+```
+
+
+```{r}
+dds<-dds_DS
+
+#Extract comparisons for 3 desired groups
+DGERes_controlpos<- ContrastDGE(c("control", "pos"), dds)
+DGERes_controlneg<- ContrastDGE(c("control", "neg"), dds)
+DGERes_posneg<- ContrastDGE(c("pos", "neg"), dds)
+
+nrow(DGERes_controlpos[DGERes_controlpos$padj<0.05,])
+nrow(DGERes_controlneg[DGERes_controlneg$padj<0.05,])
+nrow(DGERes_posneg[DGERes_posneg$padj<0.05,])
+```
+
+#Plot heatmap
+```{r}
+rld<- rlog(dds)
+topn<- 50
+
+
+#select top 75 DE genes for control vs pos or neg and pos vs neg
+topgenes<- unique(c(rownames(DGERes_controlneg[1:topn,]), rownames(DGERes_controlpos[1:topn,])))
+topgenes<- unique(c(topgenes, rownames(DGERes_posneg[1:topn,])))
+
+
+mat<- assay(rld)[topgenes,]
+mat<- mat - rowMeans(mat)
+
+#settings for heatmap
+subtractFromMin<- -.5
+subtractFromMax<- 2
+lengthOut<- 100
+mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
+
+
+
+#Create metadata- to be used to color code to show which group the sample belongs to
+metadata<- as.data.frame(meta[,2])
+rownames(metadata)<-rownames(meta)
+colnames(metadata)<-"sampleGroup"
+
+#plot heatmap
+pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)), show_rownames = FALSE, annotation_col = metadata, border_color=NA)
+```
+
+
+
+
+###############################################
+Original analysis included here for comparison!
+###############################################
+
+Import and preprocess data:
+```{r}
+#set working directory
+wd<- "//Cifs2/rcdata$/UKRNASeq/"
+
+#read in count data
+countsInput<- read.csv(paste(wd, "RawCounts/CountData_Sample4Included_DateGenesIncluded_convertedToFakeGenes.csv", sep =""))
+#countsInput<-countsInput[,!(colnames(countsInput) %in% c("X4.counts.genes"))]
+                       
+#reformat Counts data
+rownames(countsInput)<- countsInput$X
+countsInput<- countsInput[,-1]
+
+#Rename column data
+colnames(countsInput)<- gsub(".counts.*", "", colnames(countsInput))
+
+#Get rid of any genes with NA values, or where counts are 0 for that gene across all samples
+counts<- na.omit(countsInput)
+counts_original<- counts[rowSums(counts)>0,]
+
+counts_original_DS<- downsample.counts(counts_original, seed=42)
+
+#Remove highest expressed "gene" - no_feature. Could throw off DE
+counts_original_NF<-counts_original[!(rownames(counts_original) %in% "no_feature"),]
+counts_original_NF_DS<- downsample.counts(counts_original_NF, seed=42)
+
+```
+
+
+Create Metadata and DESeq2 Object
+```{r}
+#Read in metadata info, select just samples to be used- excluding sample 4, 10, and 14 (either no good exome or RNASeq data)
+meta<- read.csv(paste(wd, "MetaData_AllSamples.csv",sep=""))
+rownames(meta)<- meta$Sample
+meta<- meta[,-1]
+meta<- meta[!(rownames(meta) %in% c(paste("X", c(10,14), sep=""))),]
+
+#check that counts/meta data has samples in same order
+all(rownames(meta) %in% colnames(counts_original))
+all(rownames(meta) == colnames(counts_original))
+
+#create DESeq2 object
+dds<- DESeqDataSetFromMatrix(countData=counts_original, 
+                             colData=meta, 
+                             design=~sampleGroup)
+
+#define levels- so that controls will always be used as reference group
+dds$sampleGroup<- relevel(dds$sampleGroup, ref= "control")
+
+p<-PlotMyPCA(dds,"fake", "fake")
+```
+
+
+Normalize data by running DESeq2, visualize sample clustering with PCA plot
+```{r}
+#run DE
+dds<- DESeq(dds)
+
+#Normalize using variance stabilizing transformation- DESeq2 function
+vsd <- vst(dds, blind=FALSE)
+PCAData<-DESeq2::plotPCA(vsd, intgroup="sampleGroup", returnData=TRUE)
+PCAData$sampleGroup<- gsub("pos", "TTN+", PCAData$sampleGroup)
+PCAData$sampleGroup<- gsub("neg", "TTN-", PCAData$sampleGroup)
+
+p<-ggplot(PCAData, aes(x=PC1, y=PC2, color=sampleGroup))+
+  geom_point(size=3)+
+  xlab("PC1: 27% Variance")+
+  ylab("PC2: 15% Variance")+
+  ggtitle("PCA: Controls vs TTN- vs TTN+")+
+  theme_classic()
+
+p
+```
+
+
+
+
+
+
+
