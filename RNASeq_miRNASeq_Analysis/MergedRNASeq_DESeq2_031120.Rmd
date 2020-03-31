@@ -10,6 +10,7 @@ suppressPackageStartupMessages(library(viridis))
 suppressPackageStartupMessages(library(RColorBrewer))
 suppressPackageStartupMessages(library(pheatmap))
 suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(metaseqR))
 ```
 
 
@@ -86,7 +87,7 @@ extension<- ".counts.GENES"
 ############
 
 #set list of files- merged files
-merged_readwd<- "D:/UKy/MergingRNASeq/MergedRuns_RawCounts/"
+merged_readwd<- "E:/UKy/MergingRNASeq/MergedRuns_RawCounts/"
 merged_samples<- c(1:9,11:13,15:19)
 merged_files<-c(paste(merged_samples, "_Merged", extension,sep=""))
 
@@ -160,17 +161,24 @@ write.csv(counts, paste(run2_readwd, "RawCounts_Run1S10.14_Run2Controls_AllOther
 
 Read in counts data (generated above), format, filter out very low counts nd "no_feature", and perform downsampling
 ```{r}
+#Set wds
+run1_readwd<- "//Cifs2/rcdata$/UKRNASeq/RawCounts/ORIGINALRUN_NotInUse/"
+run2_readwd<- "//Cifs2/rcdata$/UKRNASeq/RawCounts/"
+merged_readwd<- "E:/UKy/MergingRNASeq/MergedRuns_RawCounts/"
+
 #read in count data
 countsInput<- read.csv(paste(run2_readwd, "RawCounts_Run1S10.14_Run2Controls_AllOthersMerged.csv", sep =""))
 
 countsInput<-countsInput[,c(1:11, 20, 12:14,21,15:19, 22:26)]
-                       
+
 #reformat Counts data
 rownames(countsInput)<- countsInput$GeneID
 countsInput<- countsInput[,3:ncol(countsInput)]
+```
 
+```{r}
 #remove sample 10- too low of counts
-counts<- countsInput[,!(colnames(countsInput)%in% c("X10","X14"))]
+counts<- countsInput[,!(colnames(countsInput)%in% c("X10"))]
 
 #Remove highest expressed "gene" - no_feature. Could throw off DE
 counts<-counts[!(rownames(counts) %in% "no_feature"),]
@@ -191,13 +199,13 @@ wd<- "//Cifs2/rcdata$/UKRNASeq/"
 meta<- read.csv(paste(wd, "MetaData_AllSamples.csv",sep=""))
 rownames(meta)<- meta$Sample
 meta<- meta[,-1]
-meta<- meta[!(rownames(meta) %in% c(paste("X", c(10,14), sep=""))),] 
+meta<- meta[!(rownames(meta) %in% c(paste("X", c(10), sep=""))),] 
 
 #Change sample 3/4 to pos
-meta[3,2]<- "pos"
+meta[3,2]<- "neg"
 meta[4,2]<- "pos"
 meta[5,2]<- "neg"
-meta[15,2]<-"neg"
+meta[15,2]<-"neg" #Sample 17
 meta[1,2]<-"neg"
 ```
 
@@ -252,9 +260,9 @@ rld<- rlog(dds)
 topn<- 50
 
 
-#select top 75 DE genes for control vs pos or neg and pos vs neg
+#select top DE genes for control vs pos or neg and pos vs neg
 topgenes<- unique(c(rownames(DGERes_controlneg[1:topn,]), rownames(DGERes_controlpos[1:topn,])))
-topgenes<- unique(c(topgenes, rownames(DGERes_posneg[1:topn,])))
+#topgenes<- unique(c(topgenes, rownames(DGERes_posneg[1:topn,])))
 
 
 mat<- assay(rld)[topgenes,]
