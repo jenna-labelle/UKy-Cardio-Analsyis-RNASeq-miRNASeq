@@ -613,5 +613,46 @@ write.csv(multi_full, paste(wd, "AllSamples_PotentialPathogenicJunctions_Filtere
 
 
 
+#Compare the pathogenic splice sites found in Run2 Analysis to Merged analysis
+
+Read in data:
+```{r}
+wd<- "Z:/UKRNASeq/PathogenicSpliceSiteAnalysis/"
+Run2<- read.csv(paste(wd, "AllFilteredCMJunctions_ControlRemoved5_Depth10_1CanSite_Can.8_Full62GeneList.csv",sep=""))
+Merged<-read.csv(paste(wd, "MergedAlignment/MERGED_AllFilteredCMJunctions_ControlRemoved5_Depth10_1CanSite_Can.8_Full62GeneList.csv", sep=""))
+
+#Get just score and norm score
+Merged<-Merged[,c(7,8,11,20,21)]
+Run2<-Run2[,c(7,8,11,20,21)]
+
+#Add unique junction/sample ID
+Merged$UniqueID<- paste(Merged$Name, "_Sample", Merged$SampleI,sep="")
+Run2$UniqueID<- paste(Run2$Name, "_Sample", Run2$SampleID, sep="")
+
+#Merge based on unique ID
+commonJunctions<-merge(Merged, Run2, by="UniqueID")
+commonJunctions<-commonJunctions[,c(1,2,6,3,4,5,9,10)]
+colnames(commonJunctions)<-c("UniqueID", "JunctionID", "SampleID", "GeneID", "Merged_Score", "Merged_NormScore", "Run2_Score", "Run2_NormScore")
+rownames(commonJunctions)<-commonJunctions$UniqueID
+
+#Plot
+#Scores and NormScores:
+
+df<-commonJunctions[,c(5,7)]
+df<-df[order(df$Merged_Score, decreasing=TRUE),]
+commonJunctions[grep("chr6:112451243-112453954_Sample8", commonJunctions$UniqueID),]
+
+df2<-commonJunctions[,c(6,8)]
+df2<-df2[order(df2$Merged_NormScore, decreasing=TRUE),]
+df2[grep("chr2:179603167-179603867_Sample4", df2$)]
+
+p<-ggplot(commonJunctions[,c(5,7)], aes(x=Run2_NormScore, y=Merged_NormScore))+
+        geom_point()+
+        geom_abline(slope=1)+
+        xlim(0,.6)+
+        ylim(0,.6)
+
+```
+
 
 

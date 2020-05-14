@@ -10,41 +10,111 @@ suppressPackageStartupMessages(library(dplyr))
 suppressPackageStartupMessages(library(pheatmap))
 suppressPackageStartupMessages(library(viridis))
 suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(multiMiR))
+suppressPackageStartupMessages(library(metaseqR))
+suppressPackageStartupMessages(library(plyr))
 ```
 
-#DESeq2 on mature miRNA only- this section used downstream.
+Functions:
+```{r}
+ContrastDGE<- function(contrasts, dds){
+  ContrastsUse<- c("sampleGroup", contrasts)
+  ContrastsResults<- na.omit(results(dds, contrast=ContrastsUse))
+  resOrdered<- ContrastsResults[order(ContrastsResults$padj),]
+  print(nrow(resOrdered[resOrdered$padj<0.05,]))
+  return(resOrdered)
+}
 
-Data for individual samples was downloaded separately and combined using "Combining_isomirSampleFiles.Rmd"
+RunDESeq2<- function(counts, meta){
+  #check that counts/meta data has samples in same order
+  print(all(rownames(meta) %in% colnames(counts)))
+  print(all(rownames(meta) == colnames(counts)))
+  
+  #create DESeq2 object
+  dds<- DESeqDataSetFromMatrix(countData=counts, 
+                               colData=meta, 
+                               design=~sampleGroup)
+  
+  #define levels- so that controls will always be used as reference group
+  dds$sampleGroup<- relevel(dds$sampleGroup, ref= "control")
+  
+  #run DE
+  dds<- DESeq(dds)
+  
+  return(dds)
+
+}
+```
+
+#DESeq2 
+
+Two potential data sources:
+
+1. Basespace miRDeep2 --> mature and isomiR files --> collapse
+
+2. Command line miRDeep2, defualt settings
 
 Read in data
 ```{r}
-#Set working directory
-wd<- "//Cifs2/rcdata$/UKRNASeq/miRNA/"
-
-hitsInput<- read.csv(paste(wd, "RawData/MaturemiRNA/miRNA_matureHits_downloadedSeparately.csv", sep=""))
+#Data source 1- basespace files
+        #Set working directory
+        wd<- "C:/Users/Jenna/Documents/UKy_RNASeq/RawCounts/"
+        
+        matureInput<- read.csv(paste(wd, "miRNA_matureHits_downloadedSeparately.csv", sep=""))
+        isomirInput<-read.csv(paste(wd, "miRNA_isomirs_downloadedSeparately.csv",sep=""))
+        
+        #Remove sequence info from isomirs, then collapse isomirs together
+        isomirInput$isomirs<- gsub(".*_", "", isomirInput$X)
+        isomirInput<-isomirInput[,-1]
+        isomir_collapsed<-isomirInput %>% group_by(isomirs) %>%  summarise_each(funs(sum)) %>% as.data.frame()
+        rownames(isomir_collapsed)<-isomir_collapsed$isomirs
+        isomir_collapsed<- isomir_collapsed[,-1]
+        
+        #rbind mature and isomirs together. Make sure columns are in the same order
+        rownames(matureInput)<-matureInput$X
+        matureInput<-matureInput[,-1]
+        counts_merged<-rbind(matureInput,isomir_collapsed)
+        
+        #remove everything after 3rd "-" (-1, -5p, etc), then merge and sum together based on new miR IDs
+        counts_collapsedInput<-counts_merged
+        counts_collapsedInput$geneIDs<- sub("^([^-]*-[^-]*-[^-]*).*", "\\1", rownames(counts_collapsedInput))
+        counts_collapsedInput$geneIDs<- gsub("mir", "miR", counts_collapsedInput$geneIDs)
+                
+        #Collapse isomirs and mature toegether
+        counts_collapsed<-counts_collapsedInput %>% group_by(geneIDs) %>% summarise_each(funs(sum)) %>% as.data.frame
+        rownames(counts_collapsed)<-counts_collapsed$geneIDs
+        counts_collapsed<- counts_collapsed[,2:ncol(counts_collapsed)]
+        rownames(counts_collapsed)<- rownames(counts_collapsed)
+        
+#Data source 2- command line miRDeep2. Collapsed into 1 file in "ReofrmatingRawmiRDeep2Output.Rmd"
+                wd<-"E:/UKy/miRNA_Bams/SmallRNA_092019/"
+                CLcountsInput<-read.csv(paste(wd, "AllCountsFromCL_Merged.csv",sep=""), row.names = "geneID" )
+                CLcountsInput<- CLcountsInput[,-1]
+                CLcounts<-as.data.frame(apply(CLcountsInput, 2, as.integer))
+                rownames(CLcounts)<-rownames(CLcountsInput)
+                
+#Select which data source to use for the rest of the analysis
+counts<-CLcounts
 ```
 
 #Comparing TTN+ vs TTN- vs Controls
 ```{r}
 #process, rename samples
-hits<- hitsInput
-rownames(hits)<- hits$X
-hits<- hits[,2:ncol(hits)]
-colnames(hits)<- c(gsub("CM", "X", colnames(hits)[1:19]), colnames(hits)[20:24])
+hits<- counts
+#colnames(hits)<- c(gsub("CM", "X", colnames(hits)[1:19]), colnames(hits)[20:24]) #BS
+colnames(hits)<- gsub("counts_Control", "Control", gsub("counts_Sample", "X", colnames(hits))) #CL
 
-#get rid of any IDs that have 0 counts for all samples
+#get rid of any IDs that have 0 counts for all samples 
 hits<- hits[rowSums(hits)>0,]
 
-#Reorder columns, get rid of any that aren't used in RNASeq
-hits<- hits[,c(1,12,13,15,16,17,18,19,3,4,5,7,8,10,11,20,21,22,23,24)]
+#Reorder columns, get rid of any that aren't used in RNASeq/too low counts here (sample 17)
+#hits<- hits[,c(1,12,13,15,16,17,18,19,3,4,5,7,8,10,11,20,21,22,23,24)]
+#hits<- hits[,c(1,12,13,14,15,16,17,18,19,3,4,5,7,8,10,11,20,21,22,23,24)] #BS
+hits<-hits #CL
 
 #set sample groups
-sampleGroup<- c("pos", "pos", "neg", "pos", "neg", "neg", "neg", "pos", "neg", "neg", "neg", "neg", "neg", "neg", "neg", rep("control", 5))
-
-#create metadata
-sample<- colnames(hits)
-meta<- data.frame(sample, sampleGroup)
-rownames(meta)<- meta$sample
+#sampleGroup<- c("pos", "pos", "pos", "pos", "pos", "neg", "neg", "neg", "pos", "neg", "neg", "neg", "neg", "neg", "neg", "neg", rep("control", 5)) #BS
+sampleGroup<- c("pos", "pos", "pos", "pos", "pos", "neg", "neg", "neg", "pos", "neg", "neg", "neg", "neg", "neg", "neg", "neg", "neg", rep("control", 5)) 
 ```
 
 
@@ -53,6 +123,11 @@ rownames(meta)<- meta$sample
 sample<- colnames(hits)
 meta<- data.frame(sample, sampleGroup)
 rownames(meta)<- meta$sample
+```
+
+```{r}
+detach("package:metaseqR")
+detach("package:DESeq")
 ```
 
 #Plot on PCA- need to create DESeq2 object first
@@ -72,9 +147,10 @@ PCAData$sampleGroup<- gsub("neg", "TTN-", PCAData$sampleGroup)
 
 p<-ggplot(PCAData, aes(x=PC1, y=PC2, color=sampleGroup))+
   geom_point(size=3)+
-  xlab("PC1: 24% Variance")+
+  xlab("PC1: 21% Variance")+
   ylab("PC2: 13% Variance")+
   ggtitle("PCA: Controls vs TTN- vs TTN+")+
+  geom_text(aes(label=rownames(PCAData)),hjust=.5, size= 5,vjust=-1.2, color="black")+
   theme_classic()
 
 p
@@ -83,20 +159,60 @@ p
 
 Samples slightly cluster by CM status, but do NOT cluster based on TTN mutations
 
+Run differential expression on this DESeq2 object- tpos vs tneg vs controls
+```{r}
+#dds<- DESeq(dds)
+
+res_tPosvControl<- ContrastDGE(c("control", "pos"), dds)
+res_tNegvControl<-ContrastDGE(c("control", "neg"), dds)
+res_tPosvtNeg<-ContrastDGE(c("pos", "neg"), dds)
+
+
+#Normalize
+#rld<- rlog(dds)
+
+#select top genes: all sig DE miRNAs
+topgenes<- unique(c(rownames(res_tPosvControl[res_tPosvControl$padj<0.05,]), 
+             rownames(res_tNegvControl[res_tNegvControl$padj<0.05,]),
+             rownames(res_tPosvtNeg[res_tPosvtNeg$padj<0.05,])))
+
+#Alt: select top in each, even if not necessarily DE
+topn<-10
+topgenes<- unique(c(rownames(res_tPosvControl[1:topn,]), 
+             rownames(res_tNegvControl[1:topn,]),
+             rownames(res_tPosvtNeg[1:topn,])))
+
+#settings for heatmap
+subtractFromMin<- -.7
+subtractFromMax<- 2.75
+lengthOut<- 100
+
+mat<- assay(rld)[topgenes,]
+mat<- mat - rowMeans(mat)
+mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
+
+
+#Create metadata- to be used to color code to show which group the sample belongs to
+metadata<- data.frame(Sample_Group=PCAData$sampleGroup, row.names=PCAData$name)
+
+#plot heatmap
+pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)), show_rownames = FALSE, annotation_col = metadata)
+```
 
 #Rerun the above analysis, comparing ALL CM vs controls
 
 Create DESeq2 object and PCA plot
 ```{r}
 #set sample groups
-sampleGroup<- c(rep("CM", 15), rep("control", 5))
+#sampleGroup<- c(rep("CM", 16), rep("control", 5)) #BS
+sampleGroup<- c(rep("CM", 17), rep("control", 5)) #CL
 
 #create metadata
 sample<- colnames(hits)
 meta<- data.frame(sample, sampleGroup)
 rownames(meta)<- meta$sample
 
-#Run DESeq2, extract results
+#create DESeq2 object
 dds<- DESeqDataSetFromMatrix(countData=hits, 
                              colData=meta, 
                              design=~sampleGroup)
@@ -113,7 +229,7 @@ PCAData$sampleGroup<- gsub("neg", "TTN-", PCAData$sampleGroup)
 
 p<-ggplot(PCAData, aes(x=PC1, y=PC2, color=sampleGroup))+
   geom_point(size=3)+
-  xlab("PC1: 24% Variance")+
+  xlab("PC1: 21% Variance")+
   ylab("PC2: 13% Variance")+
   ggtitle("PCA: Controls vs TTN- vs TTN+")+
   theme_classic()
@@ -130,8 +246,9 @@ res<- na.omit(res)
 res<- res[order(res$padj),]
 
 nrow(res[res$padj<0.05,])
-#8 DE genes
-
+#30 DE genes
+sig<-res[res$padj<0.05 & abs(res$log2FoldChange>0.5),] #18
+miRNA_sig<-res[res$padj<0.05,] #39
 summary(results(dds))
 ```
 
@@ -139,13 +256,15 @@ Plot Heatmap for these DE results
 
 ```{r}
 #Normalize
-rld<- rlog(dds)
+#rld<- rlog(dds)
+
 #select top 25 DE genes for control vs CM
-topgenes<- rownames(res[1:25,])
+#topgenes<- rownames(res[1:,])
+topgenes<-rownames(sig)
 
 #settings for heatmap
-subtractFromMin<- -.7
-subtractFromMax<- 2.75
+subtractFromMin<- -1.1
+subtractFromMax<- .8
 lengthOut<- 100
 
 mat<- assay(rld)[topgenes,]
@@ -188,6 +307,151 @@ p<-ggplot(CMvCon) +
         theme(legend.position="none")
 p
 ```
+
+
+#Performing random sample permutation to show (hopefully) that our groups give the highest number of DEGs
+```{r}
+AllN_DEGs<-list()
+All_SampleGroups<-list()
+count=1
+while (count<=10){
+        #Randomly assign each sample to "pos" or "neg"
+        meta_random<- meta
+        meta_random$sampleGroup<-sample(meta_random$sampleGroup)
+     
+        #Perform DE using this new metadata
+        dds_random<- RunDESeq2(hits,meta_random)
+        
+        #Extract comparisons for pos vs neg
+        DEGs<-ContrastDGE(c("CM", "control"), dds_random)
+        SigDEGs<- DEGs[DEGs$padj<0.05,]
+        AllN_DEGs[count]<-nrow(SigDEGs)
+        All_SampleGroups[[count]]<-meta_random
+        
+        print(count)
+        count=count+1
+}
+```
+
+
+#Integrating miRNASeq and RNASeq data using miRB
+
+#First: re-run RNASeq DE, using CM vs Controls as meta
+Read in counts data, format, filter out very low counts nd "no_feature", and perform downsampling
+```{r}
+library(metaseqR)
+#Set wds
+readwd<-"C:/Users/Jenna/Documents/UKy_RNASeq/RawCounts/"
+
+#read in count data
+countsInput<- read.csv(paste(readwd, "RawCounts_Run1S10.14_Run2Controls_AllOthersMerged.csv", sep =""))
+
+countsInput<-countsInput[,c(1:11, 20, 12:14,21,15:19, 22:26)]
+
+#reformat Counts data
+rownames(countsInput)<- countsInput$GeneID
+countsInput<- countsInput[,3:ncol(countsInput)]
+
+#remove sample 10 and 14- too low of counts
+counts<- countsInput[,!(colnames(countsInput)%in% c("X10", "X14"))]
+
+#Remove highest expressed "gene" - no_feature. Could throw off DE
+counts<-counts[!(rownames(counts) %in% "no_feature"),]
+
+#Get rid of any genes with NA values, or where counts are 0 for that gene across all samples
+counts<- na.omit(counts) #no NA values
+counts<- counts[rowSums(counts)>0,] 
+
+#downsample: set seed so results are replicable
+counts<- downsample.counts(counts, seed=42) 
+
+detach("package:metaseqR")
+detach("package:DESeq")
+```
+
+#Run DESeq of mRNASeq data
+```{r}
+#create metadata
+meta<-data.frame(sample=colnames(counts), sampleGroup=c(rep("CM", 17), rep("control", 5)))
+
+#Run DESeq2
+dds<-DESeqDataSetFromMatrix(counts, meta, design=~sampleGroup)
+dds$sampleGroup<-relevel(dds$sampleGroup, ref="control")
+dds<-DESeq(dds)
+
+#Extract results
+res<-na.omit(results(dds))
+resOrdered<-res[order(res$padj),]
+nrow(resOrdered[resOrdered$padj<0.05,]) #4618
+
+mRNA_sig<-resOrdered[resOrdered$padj<0.05,]
+```
+
+
+Determine mRNA targets of sig DE miRNAs: using multiMiR package
+
+Searches through 16 databases to find all targets of input miRNAs
+```{r}
+#run multiMiR
+multimirResults<- get_multimir(mirna=rownames(miRNA_sig), summary=TRUE)
+
+head(multimirResults@data)
+```
+
+
+Explore multimir data:
+```{r}
+data<- multimirResults@data
+
+mydata<- data[,c(3,4,7)]
+miRNA_sig$mature_mirna_id<- rownames(miRNA_sig)
+
+
+data_miRLog2<-join(mydata, miRNA_sig[,c(1,2,6,7)], type="full",by="mature_mirna_id")
+colnames(data_miRLog2)<-c(colnames(data_miRLog2[,1:4]), "Log2FC_miRNA", "padj_miRNA")
+mRNA_sig$target_symbol<-rownames(mRNA_sig)
+AllData<-join(data_miRLog2, as.data.frame(mRNA_sig[,c(1,2,6,7)]), type="full", by="target_symbol")
+
+upmiRNAs<- AllData[AllData$Log2FC_miRNA>0,]
+length(unique(upmiRNAs$mature_mirna_id))
+
+length(unique(data$mature_mirna_id))
+#Targets for all 30 miRNA species 
+
+upmiRNAs<- miRNA_sig[miRNA_sig$log2FoldChange>0,]
+nrow(upmiRNAs)
+#18 miRNAs up regulated in CM
+
+downmiRNAs<- miRNA_sig[miRNA_sig$log2FoldChange<0,]
+nrow(downmiRNAs)
+#12 miRNAs downregulated in CM. 
+
+upmiRNATargets<- data[data$mature_mirna_id %in% rownames(upmiRNAs),]
+nrow(upmiRNATargets)
+#9,905 mRNA targets of the 18 upregulated miRNAs
+
+downmiRNATargets<- data[data$mature_mirna_id%in% rownames(downmiRNAs),]
+nrow(downmiRNATargets)
+#17,692 mRNA targets of the 12 downregulated miRNAs
+
+downmRNAs<- mRNA_sig[mRNA_sig$log2FoldChange<0,]
+nrow(downmRNAs)
+#2,524 mRNAs downregulated in CM
+
+upmRNAs<- mRNA_sig[mRNA_sig$log2FoldChange>0,]
+nrow(upmRNAs)
+#2094 mRNAs upregulated in CM
+
+UpTargetsinDownDEGs<- upmiRNATargets$target_symbol %in% rownames(downmRNAs)
+sum(UpTargetsinDownDEGs)
+#Of the 9,905 UPREGULATED miRNA targets, 1,379 of them are also DOWNREGULATED in the mRNA data
+
+DownTargetsinupDEGs<- downmiRNATargets$target_symbol %in% rownames(upmRNAs)
+sum(DownTargetsinupDEGs)
+#Of the 17,692 DOWNREGULATED miRNA targets, 2,347 of them are also UPREGULATED in the mRNA data
+```
+
+
 
 #################################
 using isomirs, other combinations

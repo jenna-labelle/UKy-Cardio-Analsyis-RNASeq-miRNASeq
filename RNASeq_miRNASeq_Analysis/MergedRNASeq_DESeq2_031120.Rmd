@@ -11,6 +11,11 @@ suppressPackageStartupMessages(library(RColorBrewer))
 suppressPackageStartupMessages(library(pheatmap))
 suppressPackageStartupMessages(library(ggplot2))
 suppressPackageStartupMessages(library(metaseqR))
+suppressPackageStartupMessages(library(ggVennDiagram))
+suppressPackageStartupMessages(library(DT))
+suppressPackageStartupMessages(library(tibble))
+suppressPackageStartupMessages(library(fgsea))
+suppressPackageStartupMessages(library(dplyr))
 ```
 
 
@@ -53,7 +58,7 @@ PlotMyPCA<- function(dds, PC1Variance, PC2Variance){
     ylab(paste("PC2:", PC2Variance))+
     ggtitle("PCA: Controls vs TTN- vs TTN+")+
     geom_text(aes(label=colnames(counts(dds)),hjust=0, vjust=0))+
-    theme_classic()
+    theme_minimal()
   return(p)
     
   
@@ -68,8 +73,47 @@ ContrastDGE<- function(contrasts, dds){
   return(resOrdered)
 }
 
+#Get sig DEGs based on 3 filters. Prints out # of DEGs fitting that criteria
+GetSigDEGs<- function(DEGs, sigThresh, BasemeanThresh, Log2FCThresh){
+        df<-DEGs[DEGs$padj<sigThresh & DEGs$baseMean>BasemeanThresh & abs(DEGs$log2FoldChange) > Log2FCThresh,]
+        print(nrow(df))
+        return(df)
+}
 
-
+#Run pathway analysis with gsea, plot
+RunPlotGSEA<-function(res, gmt, nPermutations, OnlyPlotSig){
+        #convert to vector
+        ranks <- deframe(res)
+        
+        # Load the pathways into a named list
+        pathways.hallmark <- gmtPathways(paste("C:/Users/Jenna/Documents/UKy_RNASeq/mSigdb/", gmt, sep=""))
+        
+        #run gsea with x permutations
+        fgseaRes <- fgsea(pathways=pathways.hallmark, stats=ranks, nperm=nPermutations)
+        
+        #tidy up results
+        fgseaResTidy <- fgseaRes %>%
+        as_tibble() %>%
+        arrange(desc(NES))
+        
+        #Only plot sig pathways, if desired
+        if (OnlyPlotSig=="TRUE"){
+                fgseaResTidy<-fgseaResTidy[fgseaResTidy$padj<0.05,]
+        } else {
+                fgseaResTidy<-fgseaResTidy
+        }
+                
+        
+        #plot results
+        p<-ggplot(fgseaResTidy, aes(reorder(pathway, NES), NES)) +
+        geom_col(aes(fill=padj<0.05)) +
+        coord_flip() +
+        labs(x="Pathway", y="Normalized Enrichment Score",
+             title=paste("pathways from GSEA:", gmt, "/", nPermutations, " Permutations")) + 
+        theme_minimal()
+        
+        return(list(p,as.data.frame(fgseaResTidy)))
+}
 ```
 
 
@@ -162,12 +206,10 @@ write.csv(counts, paste(run2_readwd, "RawCounts_Run1S10.14_Run2Controls_AllOther
 Read in counts data (generated above), format, filter out very low counts nd "no_feature", and perform downsampling
 ```{r}
 #Set wds
-run1_readwd<- "//Cifs2/rcdata$/UKRNASeq/RawCounts/ORIGINALRUN_NotInUse/"
-run2_readwd<- "//Cifs2/rcdata$/UKRNASeq/RawCounts/"
-merged_readwd<- "E:/UKy/MergingRNASeq/MergedRuns_RawCounts/"
+readwd<-"C:/Users/Jenna/Documents/UKy_RNASeq/RawCounts/"
 
 #read in count data
-countsInput<- read.csv(paste(run2_readwd, "RawCounts_Run1S10.14_Run2Controls_AllOthersMerged.csv", sep =""))
+countsInput<- read.csv(paste(readwd, "RawCounts_Run1S10.14_Run2Controls_AllOthersMerged.csv", sep =""))
 
 countsInput<-countsInput[,c(1:11, 20, 12:14,21,15:19, 22:26)]
 
@@ -177,8 +219,8 @@ countsInput<- countsInput[,3:ncol(countsInput)]
 ```
 
 ```{r}
-#remove sample 10- too low of counts
-counts<- countsInput[,!(colnames(countsInput)%in% c("X10"))]
+#remove sample 10 and 14- too low of counts
+counts<- countsInput[,!(colnames(countsInput)%in% c("X10", "X14"))]
 
 #Remove highest expressed "gene" - no_feature. Could throw off DE
 counts<-counts[!(rownames(counts) %in% "no_feature"),]
@@ -188,62 +230,37 @@ counts<- na.omit(counts) #no NA values
 counts<- counts[rowSums(counts)>0,] 
 
 #downsample: set seed so results are replicable
-Counts_DS<- downsample.counts(counts, seed=42) #lowest is sample 14, at ~3.5 million mapped reads
+counts<- downsample.counts(counts, seed=42) 
 ```
 
 
 Read in metadata
 ```{r}
 #Read in metadata info
-wd<- "//Cifs2/rcdata$/UKRNASeq/"
+wd<- "C:/Users/Jenna/Documents/UKy_RNASeq/"
 meta<- read.csv(paste(wd, "MetaData_AllSamples.csv",sep=""))
 rownames(meta)<- meta$Sample
 meta<- meta[,-1]
-meta<- meta[!(rownames(meta) %in% c(paste("X", c(10), sep=""))),] 
+meta<- meta[!(rownames(meta) %in% c(paste("X", c(10,14), sep=""))),] 
 
 #Change sample 3/4 to pos
-meta[3,2]<- "neg"
+meta[3,2]<- "pos"
 meta[4,2]<- "pos"
-meta[5,2]<- "neg"
-meta[15,2]<-"neg" #Sample 17
-meta[1,2]<-"neg"
 ```
 
-Run DESeq2 on Raw counts and downsampled counts
+Run DESeq2 on downsampled counts
 ```{r}
-#DESeq2 on raw counts
-dds_Raw<- RunDESeq2(counts, meta)
-
-#DESeq2 on downsampled counts
-dds_DS<- RunDESeq2(Counts_DS,meta)
+#DESeq2 on downsampled counts- pos vs neg vs controls
+dds<- RunDESeq2(counts,meta)
 ```
 
 Run and plot PCA for raw and DS counts
 ```{r}
-PCA_Raw<- PlotMyPCA(dds_Raw, "fake", "fake")
-PCA_DS<- PlotMyPCA(dds_DS, "fake", "fake")
-```
-
-```{r}
-vsd <- vst(dds_Raw, blind=FALSE)
-  PCAData<-DESeq2::plotPCA(vsd, intgroup="sampleGroup", returnData=TRUE)
-  PCAData$sampleGroup<- gsub("pos", "TTN+", PCAData$sampleGroup)
-  PCAData$sampleGroup<- gsub("neg", "TTN-", PCAData$sampleGroup)
-  
-  p<-ggplot(PCAData, aes(x=PC1, y=PC2, color=sampleGroup))+
-    geom_point(size=3)+
-    xlab(paste("PC1:", PC1Variance))+
-    ylab(paste("PC2:", PC2Variance))+
-    ggtitle("PCA: Controls vs TTN- vs TTN+")+
-    geom_text(aes(label=colnames(counts(dds)),hjust=0, vjust=0))+
-    theme_classic()
-  return(p)
+PCA_DS<- PlotMyPCA(dds, "25%", "18%") + theme_classic()
 ```
 
 
 ```{r}
-dds<-dds_DS
-
 #Extract comparisons for 3 desired groups
 DGERes_controlpos<- ContrastDGE(c("control", "pos"), dds)
 DGERes_controlneg<- ContrastDGE(c("control", "neg"), dds)
@@ -256,15 +273,14 @@ nrow(DGERes_posneg[DGERes_posneg$padj<0.05,])
 
 #Plot heatmap
 ```{r}
-rld<- rlog(dds)
-topn<- 50
-
+#rld<- rlog(dds)
+topn<- 150
 
 #select top DE genes for control vs pos or neg and pos vs neg
-topgenes<- unique(c(rownames(DGERes_controlneg[1:topn,]), rownames(DGERes_controlpos[1:topn,])))
-#topgenes<- unique(c(topgenes, rownames(DGERes_posneg[1:topn,])))
+topgenes<- unique(c(rownames(DGERes_controlneg[1:topn,]), rownames(DGERes_controlpos[1:topn,]), rownames(DGERes_posneg[1:topn,])))
+topgenes<-rownames(DGERes_posneg[1:topn,])
 
-
+#normalize rld counts based on rowMeans
 mat<- assay(rld)[topgenes,]
 mat<- mat - rowMeans(mat)
 
@@ -273,8 +289,6 @@ subtractFromMin<- -.5
 subtractFromMax<- 2
 lengthOut<- 100
 mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
-
-
 
 #Create metadata- to be used to color code to show which group the sample belongs to
 metadata<- as.data.frame(meta[,2])
@@ -286,89 +300,170 @@ pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)), show_ro
 ```
 
 
-
-
-###############################################
-Original analysis included here for comparison!
-###############################################
-
-Import and preprocess data:
+#Performing random sample permutation to show (hopefully) that our groups give the highest number of DEGs
 ```{r}
-#set working directory
-wd<- "//Cifs2/rcdata$/UKRNASeq/"
+AllN_DEGs<-list()
+count=1
+while (count<=20){
+        #Randomly assign each sample to "pos" or "neg"
+        CMSamples<-meta[meta$sampleGroup!="control",]
+        CMSamples_Random<- CMSamples
+        CMSamples_Random$sampleGroup<-sample(CMSamples$sampleGroup)
+        
+        #merge back with control samples
+        meta_random<- rbind(CMSamples_Random, meta[meta$sampleGroup=="control",])
+        
+        #Perform DE using this new metadata
+        dds_random<- RunDESeq2(counts,meta_random)
+        
+        #Extract comparisons for pos vs neg
+        DEGs<-ContrastDGE(c("pos", "neg"), dds_random)
+        SigDEGs<- DEGs[DEGs$padj<0.05,]
+        AllN_DEGs[count]<-nrow(SigDEGs)
+        
+        print(count)
+        count=count+1
+}
 
-#read in count data
-countsInput<- read.csv(paste(wd, "RawCounts/CountData_Sample4Included_DateGenesIncluded_convertedToFakeGenes.csv", sep =""))
-#countsInput<-countsInput[,!(colnames(countsInput) %in% c("X4.counts.genes"))]
-                       
-#reformat Counts data
-rownames(countsInput)<- countsInput$X
-countsInput<- countsInput[,-1]
-
-#Rename column data
-colnames(countsInput)<- gsub(".counts.*", "", colnames(countsInput))
-
-#Get rid of any genes with NA values, or where counts are 0 for that gene across all samples
-counts<- na.omit(countsInput)
-counts_original<- counts[rowSums(counts)>0,]
-
-counts_original_DS<- downsample.counts(counts_original, seed=42)
-
-#Remove highest expressed "gene" - no_feature. Could throw off DE
-counts_original_NF<-counts_original[!(rownames(counts_original) %in% "no_feature"),]
-counts_original_NF_DS<- downsample.counts(counts_original_NF, seed=42)
 
 ```
 
 
-Create Metadata and DESeq2 Object
+#Get DEGs specific to + and -, and DEGs common to +/-
 ```{r}
-#Read in metadata info, select just samples to be used- excluding sample 4, 10, and 14 (either no good exome or RNASeq data)
-meta<- read.csv(paste(wd, "MetaData_AllSamples.csv",sep=""))
-rownames(meta)<- meta$Sample
-meta<- meta[,-1]
-meta<- meta[!(rownames(meta) %in% c(paste("X", c(10,14), sep=""))),]
+#Get sig DEGs- 3 potential thresholds
+sigThres<-0.05
+BasemeanThresh<-0
+Log2FCThresh<-0.0
 
-#check that counts/meta data has samples in same order
-all(rownames(meta) %in% colnames(counts_original))
-all(rownames(meta) == colnames(counts_original))
+tPosDEGs<- GetSigDEGs(DGERes_controlpos, sigThres, BasemeanThresh, Log2FCThresh) 
+tNegDEGs<- GetSigDEGs(DGERes_controlneg, sigThres, BasemeanThresh, Log2FCThresh)
 
-#create DESeq2 object
-dds<- DESeqDataSetFromMatrix(countData=counts_original, 
-                             colData=meta, 
-                             design=~sampleGroup)
+#Get DEGs specific to tPos or tNeg, or common to tPos/tNeg
+tPosSpecific<-tPosDEGs[!(rownames(tPosDEGs) %in% rownames(tNegDEGs)),] #573 (p<0.05) / 307 (p<0.01)
+nrow(tPosSpecific)
+tNegSpecific<-tNegDEGs[!(rownames(tNegDEGs) %in% rownames(tPosDEGs)),] #2,361 (p<0.05) / 1,668 (p<0.01)
+nrow(tNegSpecific)
+CommonDEGs<-tPosDEGs[rownames(tPosDEGs) %in% rownames(tNegDEGs),]
+nrow(CommonDEGs) #2,343 p<0.05 / 1,165 p<0.01
 
-#define levels- so that controls will always be used as reference group
-dds$sampleGroup<- relevel(dds$sampleGroup, ref= "control")
+venn<-list(tPos=rownames(tPosDEGs), tNeg=rownames(tNegDEGs))
+ggVennDiagram(venn)
+```
 
-p<-PlotMyPCA(dds,"fake", "fake")
+For p<0.05 thresh: #samples in tPos/tNeg is split ~60/40. But the # of unique DEGs is split ~80/20. That is- we see a lot fewer tPos specific DEGs than we might expect, if the groups were totally comparable. Maybe suggests that the tPos are more similar to one another than the tNeg. Also can see this in the shear number of DEGs found in tPos/tNeg.
+
+#Plotting heatmap of tPos and tNeg specific DEGs only
+```{r}
+#Select just top DEGs
+Topn<-2000
+topgenes<- unique(c(rownames(tPosSpecific[1:topn,]), rownames(tNegSpecific[1:topn,])))
+#topgenes<-unique(rownames(tPosSpecific), rownames(tNegSpecific)) #Option to plot all
+
+#normalize rld counts based on rowMeans
+mat<- assay(rld)[topgenes,]
+mat<- mat - rowMeans(mat)
+
+#settings for heatmap
+subtractFromMin<- -.7
+subtractFromMax<- 1.8
+lengthOut<- 100
+mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
+
+#Create metadata- to be used to color code to show which group the sample belongs to
+metadata<- as.data.frame(meta[,2])
+rownames(metadata)<-rownames(meta)
+colnames(metadata)<-"sampleGroup"
+
+#plot heatmap
+pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)), show_rownames = FALSE, annotation_col = metadata, border_color=NA)
 ```
 
 
-Normalize data by running DESeq2, visualize sample clustering with PCA plot
+#For DEgs found in both tPos and tNeg- look at pattern of expression. Expect it to be very similar.
 ```{r}
-#run DE
-dds<- DESeq(dds)
+#Separate counts for tPos and tNeg samples
+tPosCounts<- as.data.frame(rowMeans(counts[,colnames(counts) %in% as.character(meta[meta$sampleGroup=="pos",1])]))
+tNegCounts<- as.data.frame(rowMeans(counts[,colnames(counts) %in% as.character(meta[meta$sampleGroup=="neg",1])]))
 
-#Normalize using variance stabilizing transformation- DESeq2 function
-vsd <- vst(dds, blind=FALSE)
-PCAData<-DESeq2::plotPCA(vsd, intgroup="sampleGroup", returnData=TRUE)
-PCAData$sampleGroup<- gsub("pos", "TTN+", PCAData$sampleGroup)
-PCAData$sampleGroup<- gsub("neg", "TTN-", PCAData$sampleGroup)
+#Merge counts into 1 df- for each DEG in both, mean raw counts for tPos and tNeg
+CommonDEGs_counts<-merge(as.data.frame(CommonDEGs), tPosCounts, by=0)[,c(1,8)]
+rownames(CommonDEGs_counts)<-CommonDEGs_counts$Row.names
+CommonDEGs_counts<- merge(CommonDEGs_counts, tNegCounts, by=0)[,2:4]
+colnames(CommonDEGs_counts)<-c("CommonDEGs", "Mean_tPos", "Mean_tNeg")
+rownames(CommonDEGs_counts)<-CommonDEGs_counts$CommonDEGs
+CommonDEGs_counts<- CommonDEGs_counts[,-1]
 
-p<-ggplot(PCAData, aes(x=PC1, y=PC2, color=sampleGroup))+
-  geom_point(size=3)+
-  xlab("PC1: 27% Variance")+
-  ylab("PC2: 15% Variance")+
-  ggtitle("PCA: Controls vs TTN- vs TTN+")+
-  theme_classic()
+#Optional: transformation
+CommonDEGs_log2<- log2(CommonDEGs_counts+0.0001)
+CommonDEGs_CPM<- (CommonDEGs_counts/colSums(counts)) * 1000000
+CommonDEGs_CPM_log2<- log2(CommonDEGs_CPM+0.0001)
 
-p
+df<-CommonDEGs_CPM_log2
+
+p<-ggplot(df, aes(x=Mean_tPos, y=Mean_tNeg))+
+        geom_point()
 ```
 
 
 
+#Pathway analysis using fgsea
+```{r}
+#database options I've downloaded
+PathwayOptions<-c("h.all.v7.1.symbols.gmt",
+                  "c2.cp.kegg.v7.1.symbols.gmt",
+                  "c3.all.v7.1.symbols.gmt",
+                  "c5.all.v7.1.symbols.gmt")
 
+#Reformat list of DEGs in tPos only: only need gene ID and stat
+tPosPath<- as.data.frame(tPosSpecific[,c(2,4,6)])
+tPosPath$geneID<-rownames(tPosPath)
+tPosPathInput<-tPosPath[,c(4,2)]
+
+#Reformat list of DEGs in tNeg only: only need gene ID and stat
+tNegPath<- as.data.frame(tNegSpecific[,c(2,4,6)])
+tNegPath$geneID<-rownames(tNegPath)
+tNegPathInput<-tNegPath[,c(4,2)]
+
+#Reformat list of DEGs in both tPos and tNeg: only need gene ID and stat
+CommonDEGsPath<- as.data.frame(CommonDEGs[,c(2,4,6)])
+CommonDEGsPath$geneID<-rownames(CommonDEGsPath)
+CommonDEGsPathInput<-CommonDEGsPath[,c(4,2)]
+        
+
+#Running pathway analysis
+gsea<-RunPlotGSEA(CommonDEGsPathInput, PathwayOptions[1], 10000, "TRUE")
+
+#Hallmark database: saving for later
+tNeg_Hallmark<-RunPlotGSEA(tNegPathInput, PathwayOptions[1], 10000, "TRUE")[[2]]
+tPos_Hallmark<-RunPlotGSEA(tPosPathInput, PathwayOptions[1], 100000, "TRUE")[[2]]
+
+#Running for all 4 databases. To combine and export tables.
+CommonDEGs_SigPathways<-lapply(PathwayOptions, function(x){RunPlotGSEA(CommonDEGsPathInput, x, 10000, "TRUE")[[2]]})
+all<-do.call("rbind", CommonDEGs_SigPathways) #110 pathways
+all$leadingEdge<-as.character(all$leadingEdge)
+
+tNeg_SigPathways<-lapply(PathwayOptions, function(x){RunPlotGSEA(tNegPathInput, x, 10000, "TRUE")[[2]]})
+all<-do.call("rbind", tNeg_SigPathways) #517 pathways
+all$leadingEdge<-as.character(all$leadingEdge)
+
+write.csv(all, paste(wd, "DEGsCommonTo_BothtPostNeg_GSEAResults_FourPathwayDatabases_051320.csv",sep=""))
+
+#Plot Hallmark pathways for tNeg and tPos on one plot
+tPos_H<-tPos_Hallmark[,c(1,5,6)]
+tNeg_H<-tNeg_Hallmark[,c(1,5,6)]
+
+tPos_H$Group<-"tPos"
+tNeg_H$Group<-"tNeg"
+All_H<-rbind(tPos_H, tNeg_H)
+
+#plot results
+p<-ggplot(All_H, aes(reorder(pathway, NES), NES)) +
+        geom_col(aes(fill=Group)) +
+        coord_flip() +
+        labs(x="Pathway", y="Normalized Enrichment Score") + 
+        theme_minimal()
+```
 
 
 

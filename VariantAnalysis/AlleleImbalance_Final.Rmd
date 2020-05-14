@@ -88,22 +88,6 @@ GetMaxofWeirdList<- function(WeirdList){
 }
 ```
 
-#Read in info from txdb data base + genes of interest info
-```{r}
-#read in txdb+genes
-txdb <- TxDb.Hsapiens.UCSC.hg19.knownGene
-genes <- as.data.frame(genes(TxDb.Hsapiens.UCSC.hg19.knownGene))
-
-#subset list of all genes (with positions) by genes of interest. convert to Granges: CM genes
-geneNames<- read.csv("//Cifs2/rcdata$/UKRNASeq/VariantCalling/GenesofInterest.csv",header=FALSE)
-GOI<- unname(mapIds(org.Hs.eg.db, keys=as.character(geneNames$V1), column="ENTREZID",keytype="SYMBOL"))
-GOIRanges<- makeGRangesFromDataFrame(genes[rownames(genes) %in% GOI,], keep.extra.columns=TRUE)
-
-#subset list of all genes (with positions) by genes of interest. convert to Granges: non CM genes
-geneNames<- read.csv("//Cifs2/rcdata$/UKRNASeq/VariantCalling/NonCM_GenesofInterest.csv",header=FALSE)
-GOI<- unname(mapIds(org.Hs.eg.db, keys=as.character(geneNames$V1), column="ENTREZID",keytype="SYMBOL"))
-NonCM_GOIRanges<- makeGRangesFromDataFrame(genes[rownames(genes) %in% GOI,], keep.extra.columns=TRUE)
-```
 
 #Read in GOI, associate with Geneids and create Granges object
 (For reading in exome data, getting geneids later)
@@ -325,7 +309,7 @@ RNA_ReFilterAfterExome<- lapply(RNA_Subset_AfterExome, NVariantsFilter_AllelicEx
 
 
 #Add columns for mean allelic expression + SD Allelic Expression
-RNA_AddMean<- lapply(RNA_ReFilterAfterExome_CM, function(x){
+RNA_AddMean<- lapply(RNA_ReFilterAfterExome, function(x){
   x %>% group_by(geneid) %>% mutate(MeanAllelicExpression=mean(AllelicExpression)) %>% as.data.frame
 })
 
@@ -342,6 +326,8 @@ FilteredVariants<-do.call(rbind, RNA_AddMeanAndSD)
 
 #Combine all median allelic expression values for each geneid
 RNA_MedianFinal<- lapply(RNA_AddMeanAndSD, function(x) {x[!duplicated(x$geneid),]})
+RNA_MedianFinal_rbind<-do.call(rbind, RNA_MedianFinal)
+
 
 #bind all median allelic expression values into 1 (keepin just SNP info + Sample + MedianAllelicExpression + gene), then write to csv
 MediansAll<-  do.call(rbind, RNA_MedianFinal)
@@ -350,8 +336,10 @@ MediansAll<- MediansAll[order(MediansAll$geneid),colnames(MediansAll) %in% c("ge
 
 #Export results
 ```{r}
-#Filtered variants
+#Filtered variants- RNASeq and Exome
 write.csv(FilteredVariants, paste(merged_readwd, "MERGED_FinalFilteredVariants_PercentCoverageExome_AllCMVariants.csv",sep=""))
+
+write.csv(RNA_MedianFinal_rbind, paste(merged_readwd,"MERGED_AllGenes_AllFilteredRNASeqVariants_CoveragePer.1_Total15_RefAlt2_3PerGene_FilteredByExomeQual40Total15RefAlt2.csv", sep="" ))
 
 #Median allelic expression for each gene
 write.csv(MediansAll, paste(merged_readwd, "MERGED_CMGenes_MedianAllelicExpression_AllRNASeqVariants_CoveragePer.1_Total15_RefAlt1_3PerGene_FilteredByExomeQual40Total15RefAlt2.csv", sep=""))
@@ -383,19 +371,20 @@ All_sigTest$Sample<- ordered(All_sigTest$Sample, levels= c("Control",1:9,11:13,1
 SplitByGene<- split(All_sigTest, f=All_sigTest$geneid) #138 genes
 
 #only keep gene if there's at least 1 variant in a non-control sample + 3 control samples
-#At least 3 variants in a control
+#At least 3 variants in a control:
 NControls<- unlist(lapply(SplitByGene, function(x) {
   length(grep("Control", x$Sample))
 }))
 EnoughControls<-SplitByGene[NControls>=3]
 
-#At least 1 CM sample
+#At least 1 CM sample:
 NSamples<- lapply(EnoughControls, function(x) { x %>% filter(Sample!= "Control") %>% group_by(Sample) %>% mutate(NumberVariants=n()) %>%  filter(NumberVariants>=1) %>% as.data.frame})
 EnoughSamples<- EnoughControls[unlist(lapply(NSamples,nrow))>=1] #down to 61 genes
 
 
 #initialize empty list for appending significant gene/samples to
 SigAllelicExpression<- data.frame()
+AllAlleicExpression_Dunn<-data.frame()
 
 #Run dunn test for all genes 
 for (i in 1:length(EnoughSamples)){
@@ -407,6 +396,7 @@ for (i in 1:length(EnoughSamples)){
   pvalue$gene<- variants$geneid[1]
   sig<-pvalue[pvalue$Pvalue<0.05,]
   SigAllelicExpression<- rbind(SigAllelicExpression, sig)
+  AllAlleicExpression_Dunn<-rbind(AllAlleicExpression_Dunn, pvalue)
   
 }
 
@@ -431,13 +421,21 @@ ControlsandCM<- full_join(SigGenes_Medians, AllControls_SigGenes, by="geneid")
 
 #Merge this with significance info- pvalue from dunn test
 Sig_AndAllelicExpressionMetrics_id<- cbind(SigAllelicExpression, ControlsandCM, by="UniqueID")
-Sig_AndAllelicExpressionMetrics<- Sig_AndAllelicExpressionMetrics_id[,c(3,2,1,6:9,12:14)]
+Sig_AndAllelicExpressionMetrics<- Sig_AndAllelicExpressionMetrics_id[,c(4,3,2,1,6:9,11:13)]
 
 
 #Prep for export: all the SNPs that caused the significant gene/sample pairings. Will merge this with the above table into one file manually in excel.
-AllFilteredSNPs<- do.call(rbind,EnoughSamples)
+AllFilteredSNPs<- All_NoIndels
 AllFilteredSNPs$UniqueID<- paste(AllFilteredSNPs$Sample, AllFilteredSNPs$geneid,sep=":")
 AllFilteredSNPs_SigGeneSamples<- AllFilteredSNPs[AllFilteredSNPs$UniqueID %in% Sig_AndAllelicExpressionMetrics_id$UniqueID,]
+
+#Add in the number of variants in significant sample/gene pairings- for individual SNPs
+AllFilteredSNPS_NumberVariantsPer<-AllFilteredSNPs %>% group_by(UniqueID) %>% mutate(NumberVariantsPerGene=n()) %>% as.data.frame()
+AllFilteredSNPS_NumberVariantsPer<-AllFilteredSNPS_NumberVariantsPer[,23:24]
+AllFilteredSNPs_SigGeneSamples<- merge(AllFilteredSNPS_NumberVariantsPer,AllFilteredSNPs_SigGeneSamples, by="UniqueID")
+
+#Add in the number of variants in sig gene/pairings- for overall gene/sample table
+Sig_AndAllelicExpressionMetrics<-merge(Sig_AndAllelicExpressionMetrics, AllFilteredSNPS_NumberVariantsPer[!(duplicated(AllFilteredSNPS_NumberVariantsPer)),],by="UniqueID")
 ```
 
 Export results
