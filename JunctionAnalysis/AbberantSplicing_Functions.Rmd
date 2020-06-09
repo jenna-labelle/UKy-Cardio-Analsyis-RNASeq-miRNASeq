@@ -1,0 +1,218 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+#All functions used in abberant splice site filtering/identification. Analysis can be found in "AbberantSplicing_Analysis.Rmd"
+
+#Functions for data preprocessing:
+
+Convert input bed files --> genomic ranges --> add gene IDs --> select gene ID of interest
+```{r}
+GetJunctionGeneID<- function(bed, genes, GeneIDs) {
+  #Set column names
+  colnames(bed)<- c("Chrom", "Start", "End", "Name", "Score", "Strand", "ThickStart", "ThickEnd","ItemRGB", "BlockCount", "BlockSizes", "BlockStarts")
+  
+  #Convert bed file to genomic ranges, add score as metadata column
+  GR<- makeGRangesFromDataFrame(bed)
+  values(GR)<- DataFrame(Score=bed$Score, Name=bed$Name)
+  
+  #Get overlaps of GRanges bed info and all known genes
+  ranges<- subsetByOverlaps(GR,genes)
+  
+  #Get the geneID names, associate back with the overlap GRanges object
+  hits<- findOverlaps(GR,genes)
+  geneid <- CharacterList(split(genes$gene_id[subjectHits(hits)],queryHits(hits)))
+  mcols(ranges) <- DataFrame(mcols(ranges), geneid)
+  
+  #Subset by desired gene list
+  Junctions_GeneIDs<- as.data.frame(ranges)
+  GeneJunctions_GeneIDs<- Junctions_GeneIDs[Junctions_GeneIDs$geneid %in% GeneIDs,]
+  return(GeneJunctions_GeneIDs)
+}
+```
+
+
+Split junction name into two columns: splice site A and B, and concatanates with chromosome to give unique splice site. 
+
+For creating canonical splice site list + filtering CM junctions based on canonical splice sites
+```{r}
+SpliceSiteSplit<- function(Junctions){
+  #Split all junctions into side A and side B
+  AllJunctions<- unlist(lapply(strsplit(Junctions$Name, ":"), function(x){x[2]}))
+  SpliceSites<- strsplit(AllJunctions, "-")
+  SpliceSiteA<- unlist(lapply(SpliceSites, function(x){x[1]}))
+  SpliceSiteB<- unlist(lapply(SpliceSites, function(x){x[2]}))
+  
+  #Add chr number to create unique Splice Site ID
+  Junctions$SpliceSiteA<- paste(Junctions$seqnames, SpliceSiteA,sep=":")
+  Junctions$SpliceSiteB<- paste(Junctions$seqnames, SpliceSiteB,sep=":")
+  return(Junctions)
+}
+```
+
+
+#Functions for creating Control sample lists (Control Junctions and Canonical Splice Sites
+
+Create list of Control junctions from unfilterd junctions. Input is a list of all junction dataframes of controls. 
+```{r}
+CreateControlJunctionsList<-function(ListofJunctionsInControls, CountThreshold=5, NControlsThreshold=2){
+  #Rename columns to include sample info
+  AllControlBed_JustScores<- list()
+  for (i in 1:length(ListofJunctionsInControls)){
+       df<- ListofJunctionsInControls[[i]]
+       df<- df[,colnames(df) %in% c("Name", "Score")]
+       colnames(df)<- c(paste("Control", i, "_Score", sep=""),"Name" )
+       AllControlBed_JustScores[[i]]<- df
+  }
+  #Merge into one df
+  AllControlJunctions_Merged<-Reduce(function(...) merge(..., by = c('Name'), all=TRUE), AllControlBed_JustScores)
+  
+  #Convert NA to 0, change rownames
+  AllControlJunctions_Merged[is.na(AllControlJunctions_Merged)]<- 0
+  rownames(AllControlJunctions_Merged)<- AllControlJunctions_Merged$Name
+  AllControlJunctions_Merged<-AllControlJunctions_Merged[,-1]
+  
+  #Add column with maximum score for each junction
+  AllControlJunctions_Merged$Max<-apply(AllControlJunctions_Merged, 1, max)
+
+  #Add column with Number of samples that have that junction
+  AllControlJunctions_Merged$SamplesWithJunction<- rowSums(AllControlJunctions_Merged[,1:length(ListofJunctionsInControls)]>0)
+
+  #Get list of control junctions to REMOVE from CM junctions: Appears in >1 control samples + supported by > 5 reads
+  ControlJunctions_Filtered<- AllControlJunctions_Merged[AllControlJunctions_Merged$Max>=CountThreshold,]
+  ControlJunctions_Filtered<- ControlJunctions_Filtered[ControlJunctions_Filtered$SamplesWithJunction>=NControlsThreshold,]
+  
+  print(paste("Removed", nrow(AllControlJunctions_Merged)-nrow(ControlJunctions_Filtered),"of", nrow(AllControlJunctions_Merged), "control junctions"))
+  
+  return(ControlJunctions_Filtered)
+}
+```
+
+Create list of canonical splice sites. Junctions are filtered by depth (default is 80% of mean of all junctions in that gene) and then split into two splice sites. To be considered "canonical", splice sites must be found in all controls. 
+```{r}
+CreateCanonicalSpliceSiteList<- function(ListofJunctionsInControls, DepthPercentageFilter=0.8){
+  #Split splice sites into separate, unique column
+  AllSplitControlJunctions<- lapply(ListofJunctionsInControls, SpliceSiteSplit)
+  
+  #Filter all control junctions by depth
+  AllDepthFilteredControlJunctions<- lapply(AllSplitControlJunctions, MeanDepthFilter, Percentage=DepthPercentageFilter)
+  
+  #Get all A and B spice sites (summed) for each sample:
+  #i.e., if an A splice site has 2 B splice sites, sum the scores for both sites for the A. Repeat for B splice sites.
+  AllAControlSpliceSites<- lapply(AllDepthFilteredControlJunctions, function(x) {
+          x %>% group_by(SpliceSiteA) %>% summarize(MeanScore=sum(Score)) %>% as.data.frame
+  })
+  
+  AllBControlSpliceSites<- lapply(AllDepthFilteredControlJunctions, function(x) {
+          x %>% group_by(SpliceSiteB) %>% summarize(MeanScore=sum(Score)) %>% as.data.frame
+})
+  
+  
+  #Rename columns to include sample ID
+  for (i in 1:length(AllAControlSpliceSites)){
+    colnames(AllAControlSpliceSites[[i]])<- c("SpliceSiteA", paste(i, "MeanScore", sep=":"))
+  }
+  
+  for (i in 1:length(AllBControlSpliceSites)){
+    colnames(AllBControlSpliceSites[[i]])<- c("SpliceSiteB", paste(i, "MeanScore", sep=":"))
+  }
+  
+  #Merge all A splice sites into one df, all B into one df
+  #Only keeps splice sites present in all control samples
+  MergedAControlSpliceSites<- AllAControlSpliceSites %>% Reduce(function(dtf1, dtf2) left_join(dtf1, dtf2, by="SpliceSiteA"), .) %>% na.omit
+  MergedBControlSpliceSites<- AllBControlSpliceSites %>% Reduce(function(dtf1, dtf2) left_join(dtf1, dtf2, by="SpliceSiteB"), .) %>% na.omit
+  
+  print(paste(nrow(MergedAControlSpliceSites), "canonical A splice sites"))
+  print(paste(nrow(MergedBControlSpliceSites), "canonical B splice sites"))
+  
+  return(list(MergedAControlSpliceSites,MergedBControlSpliceSites))
+}
+```
+
+#Functions for filtering CM junctions
+
+Filter junctions based on static depth filter (default 10)
+```{r}
+StaticDepthFilter<- function(Junctions, DepthFilter=10){
+  return(Junctions[Junctions$Score>DepthFilter,])
+}
+```
+
+
+Filter junctions based on depth- greater than X% (default=10%) of mean depth of all junctions in that gene for that sample
+```{r}
+MeanDepthFilter<- function(Junctions, Percentage=0.1){
+  Junctions$geneid<- as.character(Junctions$geneid)
+  Junctions_Depth<-as.data.frame(group_by(Junctions, geneid) %>% mutate(MeanDepth=mean(Score))) %>% filter(Score>(MeanDepth*Percentage))
+  print(paste(nrow(Junctions)-nrow(Junctions_Depth), "of", nrow(Junctions), "junctions removed from sample"))
+  return(Junctions_Depth)
+}
+```
+
+
+Filter junctions based on presence in Control Junctions
+```{r}
+ControlJunctionsFilter<- function(SampleJunctions,ControlJunctions){
+  #Get rid of any junctions in control list
+  ControlJunctionsInSample<- SampleJunctions$Name %in% rownames(ControlJunctions)
+  UniqueJunctions<- SampleJunctions[!ControlJunctionsInSample,]
+  print(paste(nrow(SampleJunctions)-nrow(UniqueJunctions), "of", nrow(SampleJunctions), "junctions removed from sample"))
+  return(UniqueJunctions)}
+```
+
+Filter junctions based on presence in Canonical Splice Sites list- remove if neither or both sites are canonical
+```{r}
+FilterOutBothNeitherCanonical<- function(SplitJunction, CanASpliceSites, CanSpliceSites){
+  #Splice site A not in list:
+  SplitJunction$A_Canonical<- SplitJunction$SpliceSiteA %in% CanASpliceSites$SpliceSiteA
+ 
+  #Splice site B not in list:
+  SplitJunction$B_Canonical<-SplitJunction$SpliceSiteB %in% CanBSpliceSites$SpliceSiteB
+
+  #Neither splice site canonical
+  SplitJunction$Sum<- rowSums(SplitJunction[,colnames(SplitJunction) %in% c("A_Canonical", "B_Canonical")])
+  SplitJunction$NeitherCanonical<- SplitJunction$Sum==0
+  
+  #Both splice sites canonical
+  SplitJunction$BothCanonical<- SplitJunction$Sum==2
+  
+  #One splice site canonical one not
+  SplitJunction$OneCanonical<- SplitJunction$Sum==1
+  
+  #Get mean of depth of each canonical splice site in controls
+  Mean_CanASpliceSite<-CanASpliceSites
+  Mean_CanASpliceSite$MeanA<- rowMeans(Mean_CanASpliceSite[,2:ncol(Mean_CanASpliceSite)])
+  
+  Mean_CanBSpliceSite<-CanBSpliceSites
+  Mean_CanBSpliceSite$MeanB<- rowMeans(Mean_CanBSpliceSite[,2:ncol(Mean_CanBSpliceSite)])
+  
+  #Add information about the depth of splice site for controls
+  ControlDepths<- merge(SplitJunction, 
+                        Mean_CanASpliceSite[,colnames(Mean_CanASpliceSite) %in% c("SpliceSiteA", "MeanA")], 
+                        by="SpliceSiteA",all.x=TRUE)
+   ControlDepths<- merge(ControlDepths, 
+                        Mean_CanBSpliceSite[,colnames(Mean_CanBSpliceSite) %in% c("SpliceSiteB", "MeanB")], 
+                        by="SpliceSiteB",all.x=TRUE)
+  #Convert NAs to 0 
+  ControlDepths[is.na(ControlDepths)]<- 0
+  
+  #Print out summary of results
+  print(paste(sum(ControlDepths$OneCanonical), "of", nrow(ControlDepths), "junctions have exactly 1 canonical splice site"))
+
+  
+  return(ControlDepths)
+}
+```
+
+
+Add "Norm Score"- defined as the depth of junction in CM sample / mean depth of CANONICAL side of that junction in control samples
+Not used to remove any junctions, but used to prioritize analysis of final list of potentially aberrant junctions
+```{r}
+GetNormScore<- function(Junctions){
+  Junctions$MeanBothSites<- rowSums(Junctions[,colnames(Junctions) %in% c("MeanA", "MeanB")])
+  Junctions$NormScore<- Junctions$Score/Junctions$MeanBothSites
+  return(Junctions)
+}
+```
+

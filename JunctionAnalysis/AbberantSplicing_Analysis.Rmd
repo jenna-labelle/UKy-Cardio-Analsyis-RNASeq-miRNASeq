@@ -1,0 +1,165 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+#Analysis for filtering junctions to identify aberrant splice sites
+
+Functions from "AberrantSplicing_Functions.Rmd" used here
+
+Overall:
+
+1. Read in CM and controls junctions. Each sample should be a separate csv file, optionally filtered by GOI, with at least the columns:
+    seqnames (chromosome #)
+    start (start of junction)
+    end (end of junction)
+    Score (Depth of junction)
+    Name (chr#:start-end)
+    geneid (gene junction is found in)
+
+2. Create filtered controls lists, used for filtering CM junctions:
+    -Control junctions
+    -Control splice sites (=Canonical Splice Sites)
+
+3. Filter CM junctions by:
+    -Depth
+    -Presence in Control junctions
+    -presence in canonical splice sites
+
+4. Annotate junctions with Norm score (used to priortize junctions for downstream analysis, e.g., IGV)
+    
+
+```{r}
+library(dplyr)
+```
+
+#All settings used for filters:
+```{r}
+#Creating filtered controls list
+CountThreshold<-100 #makes a large difference in total n of filtered junctions
+NControlsThreshold<-2 #makes virtually no difference
+
+#Creating lists of canonical splice sites:
+DepthPercentageFilter <- 0.5 #makes a large difference in total n of filtered junctions
+
+#Filter CM junctions by depth (percentage of mean)
+Percentage<-0.8 #makes a small difference in total n of filtered junctions
+```
+
+
+#1. Read in data- junctions for CM samples and Control samples all in separate csv files (bed file format)
+Previously filtered to only include junctions found in genes of interest
+```{r}
+#Set working directory
+wd<- "D:/UKy/MergingRNASeq/MergedRuns_junctions.bed/"
+
+#Set list of samples needed- CM samples numbered as 1-19, Controls numbered as UK-Control-1-5
+Samples<-c(1:19)
+FileList<- paste(wd, "GOIFilteredJunctions_Sample", Samples, ".csv", sep="")
+ControlFileList<- paste(wd,"GOIFilterJunctions_","UK-Control-", c(1:5), ".csv", sep="")
+
+#Read in all junction files (bed files)
+AllCMJunctions<- lapply(FileList, read.csv, header=TRUE, stringsAsFactors=FALSE)
+AllControlJunctions<- lapply(ControlFileList, read.csv, header=TRUE, stringsAsFactors=FALSE)
+
+#reformat- remove first column from each file
+AllCMJunctions<- lapply(AllCMJunctions, function(x) {x[,-1]})
+AllControlJunctions<- lapply(AllControlJunctions, function(x) {x[,-1]})
+
+#Subset to only the columns necessary- seqnames, start, end, Score, geneid
+ColumnsNeeded<-c("seqnames", "start", "end", "Score", "geneid", "Name")
+AllCMJunctions<-lapply(AllCMJunctions,function(x){x[,colnames(x) %in% ColumnsNeeded]})
+AllControlJunctions<-lapply(AllControlJunctions,function(x){x[,colnames(x) %in% ColumnsNeeded]})
+
+head(AllCMJunctions[[1]])
+```
+
+
+#2. Create filtered controls lists, used for filtering CM junctions:
+
+#Create list of Control Junctions (default settings)
+```{r}
+FilteredControlJunctions<-CreateControlJunctionsList(AllControlJunctions, CountThreshold=CountThreshold, NControlsThreshold=NControlsThreshold)
+```
+
+#Create list of Canonical Splice sites(Default settings)
+```{r}
+CanSpliceSites<-CreateCanonicalSpliceSiteList(AllControlJunctions, DepthPercentageFilter = DepthPercentageFilter)
+CanASpliceSites<-CanSpliceSites[[1]]
+CanBSpliceSites<-CanSpliceSites[[2]]
+```
+
+#3. Filter CM Junctions (3 filters total)
+
+1) Remove junction based on depth of reads supporting the junction. Two options (can both be used if desired):  
+  a) Remove if depth is below some static threshold (default=10)  
+  b) Remove if depth is below some percentage (default=10%) of the mean depth of all junctions in that sample.  
+    Example: Junction chr1_100-200 has a depth of 10 in Sample 1 in gene X. 
+            On average, all junctions in gene X in Sample 1 have a depth of 200. 
+            Since Junction chr1_100-200 is at <10% mean depth, this junction is removed in this filter
+    
+2) Remove junction if found in list of Control Junctions
+
+3) Remove junction if BOTH or NEITHER splice sites of the junction are classified as "Canonical Splice Sites".  
+  Example: CM junction chr1_100-300 is split into SpliceSiteA_chr1_100 and SpliceSiteB_chr1_300. 
+          SpliceSiteA_chr1_100 is considered "Canonical" (i.e., found in the "Canonical Splice Sites" list constructed previously). 
+          SpliceSiteB_chr1_300 is not considered Canonical. This junction, therefore,  will not be removed in this filter.
+
+#Remove junction based on depth of reads supporting the junction- using Percentage based (option b; default (10%)) method here
+```{r}
+CMJunctions_DepthFilter<-lapply(AllCMJunctions, MeanDepthFilter, Percentage=Percentage)
+```
+
+#Remove junction if found in list of Control Junctions
+```{r}
+CMJunctions_ControlJunctionsFilter<- lapply(CMJunctions_DepthFilter, ControlJunctionsFilter, ControlJunctions=FilteredControlJunctions)
+```
+
+#Remove junction if BOTH or NEITHER splice sites of the junction are classified as "Canonical Splice Sites".  
+```{r}
+#Add splice site IDs to CM samples
+CMSplitJunctions<- lapply(CMJunctions_ControlJunctionsFilter, SpliceSiteSplit)
+
+#Add annotation detailing whether each side of the junction is "canonical" and what the mean depth for that canonical junction is (in controls)
+CMCanonicalAnnotatedJunctions<- lapply(CMSplitJunctions, FilterOutBothNeitherCanonical, CanASpliceSites,CanBSpliceSites)
+
+#Select just junctions where exactly one side is canonical
+AllOneCanonicalJunctions<- lapply(CMCanonicalAnnotatedJunctions, function(x) {x[x$OneCanonical=="TRUE",]})
+```
+
+#4. Annotate junctions with Norm score (used to priortize junctions for downstream analysis, e.g., IGV)
+```{r}
+CMJunctions_NormScoreAnnotation<-lapply(AllOneCanonicalJunctions, GetNormScore)
+```
+
+
+#Merge results for all samples together, use for exporting
+```{r}
+#Remove any samples that have no filtered junctions
+failingSamples<-c()
+
+count=1
+for (i in 1:length(CMJunctions_NormScoreAnnotation)){
+  df<-CMJunctions_NormScoreAnnotation[[i]]
+  if(nrow(df) ==0){
+    failingSamples[count]=Samples[i]
+    count=count+1
+  }
+}
+
+passingSamples<-Samples[!(Samples %in% failingSamples)]
+passingJunctions<-CMJunctions_NormScoreAnnotation[!(1:length(CMJunctions_NormScoreAnnotation) %in% failingSamples)]
+
+#Add sample information to each junction
+for (i in 1:length(passingJunctions)){
+  passingJunctions[[i]]$SampleID<-passingSamples[i]
+}
+
+AllFilteredJunctions<- do.call(rbind,passingJunctions)
+
+paste(nrow(AllFilteredJunctions[AllFilteredJunctions$NormScore>0.1,]), "junctions in final filtered list")
+```
+```{r}
+#sessionInfo()
+```
+

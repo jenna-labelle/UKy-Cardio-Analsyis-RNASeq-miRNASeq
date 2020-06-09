@@ -1,0 +1,111 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+#Import and perform initial processing of data- only needs to be performed once
+
+
+
+#Import raw junctions for individual samples (difference sources, described below) and merge into one dataset
+```{r}
+#Three types of data: 
+  #1: samples run in both run 1 and run 2, fastqs merged --> alignment
+  #2: samples run in only run 1 (10 and 14)
+  #3: samples run in only run 2 (controls)
+
+extension<- ".junctions.bed"
+
+############
+#Dataset 1 #
+############
+
+#set list of files- merged files
+merged_readwd<- "D:/UKy/MergingRNASeq/MergedRuns_junctions.bed/"
+merged_samples<- c(1:9,11:13,15:19)
+merged_files<-c(paste(merged_samples, "_Merged", extension,sep=""))
+
+#Read in junctions data
+merged_Alljunctions<-list()
+for (i in 1:length(merged_files)){
+  file<- read.table(paste(merged_readwd, merged_files[i], sep=""))
+  #file$Sample<- merged_samples[i]
+  merged_Alljunctions[[i]]<- file
+}
+
+############
+#Dataset 2 #
+############
+
+#set list of files- run 1 files (10 and 14)
+run1_readwd<- "//Cifs2/rcdata$/UKRNASeq/RawFiles/Run1-highrRNA/"
+run1_samples<- c(10,14)
+run1_files<-c(paste(run1_samples, extension,sep=""))
+
+#Read in junctions data
+run1_Alljunctions<-list()
+for (i in 1:length(run1_files)){
+  file<- read.table(paste(run1_readwd, run1_files[i], sep=""))
+  #file$Sample<-run1_samples[i]
+  run1_Alljunctions[[i]]<- file
+}
+
+############
+#Dataset 3 #
+############
+
+#set list of files- run 2 files (controls)
+run2_readwd<- "//Cifs2/rcdata$/UKRNASeq/RawFiles/Bed/"
+run2_samples<- paste("UK-Control-", c(1:5), sep="")
+run2_files<-c(paste(run2_samples, extension,sep=""))
+
+#Read in junctions data
+run2_Alljunctions<-list()
+for (i in 1:length(run2_files)){
+  file<- read.table(paste(run2_readwd, run2_files[i], sep=""))
+  #file$Sample<- run2_samples[i]
+  run2_Alljunctions[[i]]<- file
+}
+
+
+
+#Merge all CM junctions together into one list (Samples 14 and 10 in run 1, all others merged) ), then into one DF
+#Keep control junctions separate
+AllBed<- c(merged_Alljunctions, run1_Alljunctions)
+#CMjunctions<- do.call(rbind, AllCMjunctions)
+AllControlBed<- run2_Alljunctions
+```
+
+
+#Get junctions in genes of interest (in both CM samples and controls)
+```{r}
+#Read in txdb- only needs to be done once
+txdb <- TxDb.Hsapiens.UCSC.hg19.knownGene
+  
+#Get full list of genes and genes of interest
+genes <- genes(TxDb.Hsapiens.UCSC.hg19.knownGene)
+
+#Input genes of interest- as gene name
+geneNames<- read.csv("//Cifs2/rcdata$/UKRNASeq/PathogenicSpliceSiteAnalysis/GenesofInterest.csv",header=FALSE)
+
+#Convert to entrez gene ids
+GOI<- unname(mapIds(org.Hs.eg.db, keys=as.character(geneNames$V1), column="ENTREZID",keytype="SYMBOL"))
+
+#Get Genes of interest junctions, in CM samples
+AllGOIJunctions<- lapply(AllBed, GetJunctionGeneID, genes=genes, GeneIDs=GOI)
+
+#Get Genes of interest junctions, in controls 
+AllGOIControlJunctions<- lapply(AllControlBed, GetJunctionGeneID, genes=genes, GeneIDs=GOI)
+
+#Write all GOI filtered junctions to csv
+  CMSamples<-c(merged_samples, run1_samples)
+  for (i in 1:length(CMSamples)){
+          write.csv(AllGOIJunctions[[i]], 
+                    paste(merged_readwd, "GOIFilteredJunctions_Sample", CMSamples[i],".csv", sep="") )
+  }
+  
+  for (i in 1:length(run2_samples)){
+          write.csv(AllGOIControlJunctions[[i]], 
+                    paste(merged_readwd, "GOIFilterJunctions_", run2_samples[i], ".csv", sep=""))
+  }
+```
