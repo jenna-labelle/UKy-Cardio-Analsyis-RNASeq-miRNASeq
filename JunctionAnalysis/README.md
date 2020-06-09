@@ -4,10 +4,17 @@ Here, all junctions within CM samples are filtered to identify abberant splice s
 
 <br/>
 
+## Input files required:
+
+1) .csv files of all junctions in experimental samples (CM samples here). This .csv file should contain, minimally, columns for chromosome, start of junction, end of junction, depth of junction, gene junction is found in. Each sample should have a separate .csv file.
+2) .csv files of all junctions in each control sample. This .csv file should contain, minimally, columns for chromosome, start of junction, end of junction, depth of junction, gene junction is found in. Each sample should have a separate .csv file.
+
+These .csv files should be optionally filtered to only include junctions in genes of interest (here, genes found to be involved in CM)
+
 ## Two databases based on **junctions found in control samples** are used when filtering CM junctions:
 
 1) List of ***Control Junctions***: built from *junctions* found in control samples. Composed of **junctions that appear in at least 2 control samples with at least 5 reads**
-2) List of ***Canonical splice sites***: A canonical splice site is defined as a *splice site* occuring in **all 5 control samples with at least 50% of mean depth for that gene for that sample**. The 50% threshold is somewhat arbitrary and can be adjusted within the function.  
+2) List of ***Canonical splice sites***: A canonical splice site is defined as a *splice site* occuring in **all 5 control samples with at least 80% of mean depth for that gene for that sample**. The 80% threshold is somewhat arbitrary and can be adjusted within the function.  
 *Example: Junction chr1_100-200 is split into SpliceSiteA_chr1_100. This splice site is found in all 5 controls. In Control 1, its depth is 10 and the mean depth for all junctions in that gene is 15 (>50% depth, passes for Control 1). The same is true for Controls 2-5. SpliceSiteA_chr1_100, therefore, **is considered "canonical"** and is added to the list of Canonical splice sites*
 <br/>
 
