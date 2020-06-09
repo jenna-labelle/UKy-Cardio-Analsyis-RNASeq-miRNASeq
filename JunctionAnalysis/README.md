@@ -4,14 +4,14 @@ Here, all junctions within CM samples are filtered to identify abberant splice s
 
 <br/>
 
-Two databases based on **junctions found in control samples** are used when filtering CM junctions:
+## Two databases based on **junctions found in control samples** are used when filtering CM junctions:
 
 1) List of ***Control Junctions***: built from *junctions* found in control samples. Composed of **junctions that appear in at least 2 control samples with at least 5 reads**
 2) List of ***Canonical splice sites***: A canonical splice site is defined as a *splice site* occuring in **all 5 control samples with at least 50% of mean depth for that gene for that sample**. The 50% threshold is somewhat arbitrary and can be adjusted within the function.  
 *Example: Junction chr1_100-200 is split into SpliceSiteA_chr1_100. This splice site is found in all 5 controls. In Control 1, its depth is 10 and the mean depth for all junctions in that gene is 15 (>50% depth, passes for Control 1). The same is true for Controls 2-5. SpliceSiteA_chr1_100, therefore, **is considered "canonical"** and is added to the list of Canonical splice sites*
 <br/>
 
-Filtering of junctions is performed with 4 potential filters- 
+## Filtering of junctions is performed with 4 potential filters- 
 
 1) Remove junction based on **depth of reads supporting the junction.** Two options (can both be used if desired):  
   a) Remove if depth is below some **static threshold** (default=10)  
@@ -27,13 +27,13 @@ Filtering of junctions is performed with 4 potential filters-
 
 <br/>
 
-For our analysis, filters 1b (set at 10%) and 2-4 were used. The complete analysis, including creation of Control sample junction/splice site databases, can be found in `AbberantSplicing_Analysis.Rmd`
+## For our analysis, filters 1b (set at 10%) and 2-4 were used. The complete analysis, including creation of Control sample junction/splice site databases, can be found in `AbberantSplicing_Analysis.Rmd`
 
 <br/>
 
 
 
-The resulting list of abberant splice sites is combined with allelic imbalance information to split abberant splice sites into **two potential biologically distinct groups:**
+## The resulting list of abberant splice sites is combined with allelic imbalance information to split abberant splice sites into **two potential biologically distinct groups:**
 
 1) Abberant sites resulting in nonsense mediated decay (NMD)- *if gene shows allelic imbalance*
 2) Abberant sites that do not result in NMD, but instead may result in an abnormal protein product - *if gene does not show allelic imbalance*
