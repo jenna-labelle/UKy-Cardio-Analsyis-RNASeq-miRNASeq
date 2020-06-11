@@ -32,6 +32,19 @@ GetJunctionGeneID<- function(bed, genes, GeneIDs) {
 }
 ```
 
+#Adjust depth by mapped reads of that sample
+```{r}
+AdjustDepth<-function(ListofJunctions, AdjustFactors){
+  AdjustedJunctions<-list()
+  for (i in 1:length(ListofJunctions)){
+    junction<-ListofJunctions[[i]]
+    AdjustFactor<-AdjustFactors[i]
+    junction$Score<-junction$Score/AdjustFactor
+    AdjustedJunctions[[i]]<-junction
+  }
+  return(AdjustedJunctions)
+}
+```
 
 Split junction name into two columns: splice site A and B, and concatanates with chromosome to give unique splice site. 
 
@@ -159,6 +172,22 @@ ControlJunctionsFilter<- function(SampleJunctions,ControlJunctions){
   UniqueJunctions<- SampleJunctions[!ControlJunctionsInSample,]
   print(paste(nrow(SampleJunctions)-nrow(UniqueJunctions), "of", nrow(SampleJunctions), "junctions removed from sample"))
   return(UniqueJunctions)}
+```
+
+Filter junctions based on presence in other CM junctions
+```{r}
+CMJunctionsFilter<-function(ListOfJunctions, nThreshold=4){
+  allJunctions_nOccurences<-table(do.call(rbind, ListOfJunctions)$Name)
+  allJunctions_TooManyCMOccurences<-names(allJunctions_nOccurences[allJunctions_nOccurences>nThreshold])
+  print(paste(length(allJunctions_TooManyCMOccurences),
+              " of ",
+              length(allJunctions_nOccurences),
+              "total unique junctions occur more than ", 
+              nThreshold, 
+              " times in CM junctions"))
+  RemoveTooMany<-lapply(ListOfJunctions, function(x){x[!(x$Name %in% allJunctions_TooManyCMOccurences),]})
+  return(RemoveTooMany)
+}
 ```
 
 Filter junctions based on presence in Canonical Splice Sites list- remove if neither or both sites are canonical
