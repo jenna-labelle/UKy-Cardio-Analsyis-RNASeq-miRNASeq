@@ -205,8 +205,8 @@ write.csv(counts, paste(run2_readwd, "RawCounts_Run1S10.14_Run2Controls_AllOther
 
 Read in counts data (generated above), format, filter out very low counts nd "no_feature", and perform downsampling
 ```{r}
-#Set wds
-readwd<-"C:/Users/Jenna/Documents/UKy_RNASeq/RawCounts/"
+#Set wd
+readwd<-"C:/Users/jenna/OneDrive/Documents/UKy_RNASeq/RawCounts/"
 
 #read in count data
 countsInput<- read.csv(paste(readwd, "RawCounts_Run1S10.14_Run2Controls_AllOthersMerged.csv", sep =""))
