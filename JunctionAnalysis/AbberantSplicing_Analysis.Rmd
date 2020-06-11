@@ -36,14 +36,17 @@ library(dplyr)
 #All settings used for filters:
 ```{r}
 #Creating filtered controls list
-CountThreshold<-100 #makes a large difference in total n of filtered junctions
-NControlsThreshold<-2 #makes virtually no difference
+CountThreshold<-10 #makes a large difference in total n of filtered junctions
+NControlsThreshold<-5 #makes virtually no difference
 
 #Creating lists of canonical splice sites:
 DepthPercentageFilter <- 0.5 #makes a large difference in total n of filtered junctions
 
 #Filter CM junctions by depth (percentage of mean)
-Percentage<-0.8 #makes a small difference in total n of filtered junctions
+Percentage<-0.1 #makes a large difference in total n of filtered junctions
+
+#Filter CM junctions by "uniqueness"- how many times can it be found in other CM samples?
+nThreshold=3
 ```
 
 
@@ -74,17 +77,41 @@ AllControlJunctions<-lapply(AllControlJunctions,function(x){x[,colnames(x) %in% 
 head(AllCMJunctions[[1]])
 ```
 
+#Adjust depth of junctions based on depth of sequencing- total #reads mapped to gene
+First, need to remove any samples from analysis with very low counts (<10million total mapped reads)
+```{r}
+#Read in raw count data
+readwd<-"C:/Users/jenna/OneDrive/Documents/UKy_RNASeq/RawCounts/"
+countsInput<- read.csv(paste(readwd, "RawCounts_Run1S10.14_Run2Controls_AllOthersMerged.csv", sep =""))
+
+CM_TotalCounts<-colSums(countsInput[,1:19])
+Controls_TotalCounts<-colSums(countsInput[20:24])
+
+#Remove samples with low counts
+AllCMJunctions_LowSampleRemove<- AllCMJunctions[CM_TotalCounts>10000000] #Removes 2 samples
+AllControlJunctions_LowSampleRemove<-AllControlJunctions[Controls_TotalCounts>1000000] #Removes no samples
+
+#Get factors used to adjust depth- total counts/min(total counts across all samples)
+All_TotalCounts<-colSums(countsInput[,colSums(countsInput)>10000000])
+CM_DepthAdjust<-All_TotalCounts[1:17]/min(All_TotalCounts)
+Controls_DepthAdjust<-All_TotalCounts[18:22]/min(All_TotalCounts)
+
+#Run adjust depth function for controls and CM
+AllCMJunctions_DepthAdjusted<-AdjustDepth(AllCMJunctions_LowSampleRemove,CM_DepthAdjust)
+AllControlJunctions_DepthAdjusted<-AdjustDepth(AllControlJunctions_LowSampleRemove,Controls_DepthAdjust)
+```
+
 
 #2. Create filtered controls lists, used for filtering CM junctions:
 
 #Create list of Control Junctions (default settings)
 ```{r}
-FilteredControlJunctions<-CreateControlJunctionsList(AllControlJunctions, CountThreshold=CountThreshold, NControlsThreshold=NControlsThreshold)
+FilteredControlJunctions<-CreateControlJunctionsList(AllControlJunctions_DepthAdjusted, CountThreshold=CountThreshold, NControlsThreshold=NControlsThreshold)
 ```
 
 #Create list of Canonical Splice sites(Default settings)
 ```{r}
-CanSpliceSites<-CreateCanonicalSpliceSiteList(AllControlJunctions, DepthPercentageFilter = DepthPercentageFilter)
+CanSpliceSites<-CreateCanonicalSpliceSiteList(AllControlJunctions_DepthAdjusted, DepthPercentageFilter = DepthPercentageFilter)
 CanASpliceSites<-CanSpliceSites[[1]]
 CanBSpliceSites<-CanSpliceSites[[2]]
 ```
@@ -107,18 +134,22 @@ CanBSpliceSites<-CanSpliceSites[[2]]
 
 #Remove junction based on depth of reads supporting the junction- using Percentage based (option b; default (10%)) method here
 ```{r}
-CMJunctions_DepthFilter<-lapply(AllCMJunctions, MeanDepthFilter, Percentage=Percentage)
+CMJunctions_DepthFilter<-lapply(AllCMJunctions_DepthAdjusted, MeanDepthFilter, Percentage=Percentage)
 ```
 
 #Remove junction if found in list of Control Junctions
 ```{r}
 CMJunctions_ControlJunctionsFilter<- lapply(CMJunctions_DepthFilter, ControlJunctionsFilter, ControlJunctions=FilteredControlJunctions)
 ```
+#Remove junction if found in more than X CM samples (including the one being tested, default 4)
+```{r}
+CMJunctions_CommonCMRemoved<-CMJunctionsFilter(CMJunctions_ControlJunctionsFilter,nThreshold )
+```
 
 #Remove junction if BOTH or NEITHER splice sites of the junction are classified as "Canonical Splice Sites".  
 ```{r}
 #Add splice site IDs to CM samples
-CMSplitJunctions<- lapply(CMJunctions_ControlJunctionsFilter, SpliceSiteSplit)
+CMSplitJunctions<- lapply(CMJunctions_CommonCMRemoved, SpliceSiteSplit)
 
 #Add annotation detailing whether each side of the junction is "canonical" and what the mean depth for that canonical junction is (in controls)
 CMCanonicalAnnotatedJunctions<- lapply(CMSplitJunctions, FilterOutBothNeitherCanonical, CanASpliceSites,CanBSpliceSites)
@@ -157,8 +188,25 @@ for (i in 1:length(passingJunctions)){
 
 AllFilteredJunctions<- do.call(rbind,passingJunctions)
 
-paste(nrow(AllFilteredJunctions[AllFilteredJunctions$NormScore>0.1,]), "junctions in final filtered list")
+paste(nrow(AllFilteredJunctions), "filtered junctions")
+paste(nrow(AllFilteredJunctions[AllFilteredJunctions$NormScore>0.1,]), "junctions in with Norm score>10%")
+
+paste(sum(AllFilteredJunctions[AllFilteredJunctions$geneid=="7273",20] %in% c(2,3,4,9)), "TTN junctions in S2/3/4/9")
+
+paste(sum(!(AllFilteredJunctions[AllFilteredJunctions$geneid=="7273",20] %in% c(2,3,4,9))), "TTN junctions NOT in S2/3/4/9")
+
+AllFilteredJunctions[AllFilteredJunctions$geneid=="7273",]
 ```
+
+```{r}
+settings<-paste("Settings_",CountThreshold, NControlsThreshold, DepthPercentageFilter, Percentage, nThreshold,sep="_")
+
+wd<-"~/UKy/"
+write.csv(AllFilteredJunctions,paste(wd, "AllFilteredJunctions_", settings, ".csv",sep="_"))
+
+```
+
+
 ```{r}
 #sessionInfo()
 ```
