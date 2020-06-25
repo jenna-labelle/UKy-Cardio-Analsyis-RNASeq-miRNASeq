@@ -65,11 +65,20 @@ summarizeASEResults_1s(ASEresults_1s_haplotypesKnown)$geneOutput
 
 Using our data
 ```{r}
-#Read in vcf
-file<- "D:/UKy/RNASeq_RawVcf/CMGenesROI_AllelicDepthFromVCF/AllelicDepthFinal_GOIFilteredvcf2.vcf.gz.txt"
+#Read in vcf- ASEReadCounter --> allelic depth/basic filtering OR pre-filtered variants, based on exome
+#AseReadCounter
+  file_ase2<-"C:/Users/jenna/OneDrive/Documents/UKy/ASEReadCounterOutput_Reformated_Sample2.txt"
+  
+  #Process, get allelic depth
+  mySNVs_CM<-AllelicExpressionFromVCF(file_ase2, GOIRanges, 15,2,2,3,0 ) 
+  mySNVs_NonCM<-AllelicExpressionFromVCF(file_ase2, NonCM_GOIRanges, 15,2,2,3,0 ) 
+  mySNVs<-rbind(mySNVs_CM, mySNVs_NonCM)
+  
 
-#Process, get allelic depth
-mySNVs<-AllelicExpressionFromVCF(file, GOIRanges, 15,1,1,3,0 ) 
+  
+#Pre-filtered, based on exome
+  mySNVs<-read.csv("D:/UKy/MergingRNASeq/MergedRuns_vcf.gz/NonCM_GOIFiltered/MERGED_FinalFilteredVariants_PercentCoverageExome_AllCMVariants.csv",row.names="X")
+  mySNVs<-mySNVs[mySNVs$Sample=="2",]
 
 #subset and rename
 mySNVs<-mySNVs[,c(1,2,3,7,8,11,12,13)]
@@ -96,10 +105,20 @@ myOwnSample<-SummarizedExperiment(
   rowRanges=mySNVs_gr
     )
 
+#run MBASES
+ASEresults_1s_haplotypesKnown <- runMBASED(
+ASESummarizedExperiment=myOwnSample,
+ isPhased=TRUE,
+ numSim=10^3,
+ BPPARAM = SerialParam()
+ )
+
 ##Get results
 results<-as.data.frame(assays(ASEresults_1s_haplotypesKnown)$pValueASE)
+results$gene<-rownames(results)
+sig_results<-results[results$mySample<0.05,]
 
-length(results[results$mySample<0.05,]) #37 out of 42 genes are sig
+nrow(sig_results)
 
 ```
 
