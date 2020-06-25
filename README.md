@@ -1,4 +1,4 @@
-# UKy_RNASeq
+# Non ischemic cardiomyopathy heart tissue RNASeq/miRNASeq analysis: functional RNASeq approach
 ## University of Kentucky Biobank collaboration: WES, miRNASeq, and RNASeq analysis of non ischemic cardiomyopathy heart tissue from 18 HT patients + 5 controls
 
 **Goal:** Integrate WES and miRNASeq data with multiple RNASeq analyses (variant calling, pathogenic splice site identification, allelic imbalance, differential expression) to gain functional insight into mechanism of CM in cohort, with a particular focus on the gene TTN
