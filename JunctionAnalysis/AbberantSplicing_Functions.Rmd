@@ -244,4 +244,3 @@ GetNormScore<- function(Junctions){
   return(Junctions)
 }
 ```
-
