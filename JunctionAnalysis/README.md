@@ -53,7 +53,7 @@ While junctions are not filtered based on Norm Score, junctions with a score of 
 
 
 
-## The resulting list of abberant splice sites is combined with allelic imbalance information to split abberant splice sites into **two potential biologically distinct groups:**
+## The resulting list of abberant splice sites is combined with allelic imbalance information *(see "VariantCalling")* to split abberant splice sites into **two potential biologically distinct groups:**
 
 1) Abberant sites resulting in nonsense mediated decay (NMD)- *if gene shows allelic imbalance*
 2) Abberant sites that do not result in NMD, but instead may result in an abnormal protein product - *if gene does not show allelic imbalance*
