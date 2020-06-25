@@ -1,8 +1,13 @@
-## Variant analysis: comparison to WES and Allelic imbalance analysis
+# Variant analysis: comparison to WES and Allelic imbalance analysis
+
+## RNASeq variant calling: comparison to WES variant calling
+
+WES variant calling is generally more robust and subject to fewer sources of error (alignment, differences in expression, differences in transcripts, etc) compared to RNASeq variant calling. WES variant filtration was performed by PPM clinical bioFX team- using the same pipeline that is applied to clinical samples. Thus these variants are of very high confidence; we use these variants for allelic imbalance to filter RNASeq variants.
+
+RNASeq variant calling performed using Isaac variant caller with default settings. Variants filtered by list of genes potentially involved in CM to simplify and focus analysis. Variants additionally filtered by coverage (15X total, 2X ref and alt). List of variants compared to WES variants to confirm robust nature of strategy, prior to continuing to allelic imbalance analysis.
 
 
-
-# Allelic imbalance analysis
+## Allelic imbalance analysis
 *Approach based on Gonorazky et al, 2019*
 
 **Goal:** Identify genes that possess significant allelic imbalance, indicating potential NMD
