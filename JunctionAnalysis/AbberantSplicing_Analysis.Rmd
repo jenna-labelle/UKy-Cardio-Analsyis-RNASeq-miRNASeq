@@ -36,8 +36,8 @@ library(dplyr)
 #All settings used for filters:
 ```{r}
 #Creating filtered controls list
-CountThreshold<-10 #makes a large difference in total n of filtered junctions
-NControlsThreshold<-5 #makes virtually no difference
+CountThreshold<-5 #makes a large difference in total n of filtered junctions
+NControlsThreshold<-3 #makes virtually no difference
 
 #Creating lists of canonical splice sites:
 DepthPercentageFilter <- 0.5 #makes a large difference in total n of filtered junctions
@@ -45,8 +45,8 @@ DepthPercentageFilter <- 0.5 #makes a large difference in total n of filtered ju
 #Filter CM junctions by depth (percentage of mean)
 Percentage<-0.1 #makes a large difference in total n of filtered junctions
 
-#Filter CM junctions by "uniqueness"- how many times can it be found in other CM samples?
-nThreshold=3
+#Filter CM junctions by "uniqueness"- how many times can it be found in all CM samples?
+nThreshold=1
 ```
 
 
@@ -75,6 +75,8 @@ AllCMJunctions<-lapply(AllCMJunctions,function(x){x[,colnames(x) %in% ColumnsNee
 AllControlJunctions<-lapply(AllControlJunctions,function(x){x[,colnames(x) %in% ColumnsNeeded]})
 
 head(AllCMJunctions[[1]])
+
+paste(length(unique(unlist(lapply(AllControlJunctions, function(x){x[,5]})))), "total unique control junctions")
 ```
 
 #Adjust depth of junctions based on depth of sequencing- total #reads mapped to gene
@@ -82,7 +84,8 @@ First, need to remove any samples from analysis with very low counts (<10million
 ```{r}
 #Read in raw count data
 readwd<-"C:/Users/jenna/OneDrive/Documents/UKy_RNASeq/RawCounts/"
-countsInput<- read.csv(paste(readwd, "RawCounts_Run1S10.14_Run2Controls_AllOthersMerged.csv", sep =""))
+countsInput<- read.csv(paste(readwd, "RawCounts_Run1S10.14_Run2Controls_AllOthersMerged.csv", sep =""),row.names = "GeneID")
+countsInput<-countsInput[,-1]
 
 CM_TotalCounts<-colSums(countsInput[,1:19])
 Controls_TotalCounts<-colSums(countsInput[20:24])
@@ -135,15 +138,25 @@ CanBSpliceSites<-CanSpliceSites[[2]]
 #Remove junction based on depth of reads supporting the junction- using Percentage based (option b; default (10%)) method here
 ```{r}
 CMJunctions_DepthFilter<-lapply(AllCMJunctions_DepthAdjusted, MeanDepthFilter, Percentage=Percentage)
+
+print(paste(mean(unlist(lapply(AllCMJunctions_DepthAdjusted, nrow))), "splice sites per sample, on average before"))
+print(paste(mean(unlist(lapply(CMJunctions_DepthFilter, nrow))), "splice sites per sample, on average after"))
 ```
 
 #Remove junction if found in list of Control Junctions
 ```{r}
 CMJunctions_ControlJunctionsFilter<- lapply(CMJunctions_DepthFilter, ControlJunctionsFilter, ControlJunctions=FilteredControlJunctions)
+
+print(paste(mean(unlist(lapply(CMJunctions_DepthFilter, nrow))), "splice sites per sample, on average before"))
+print(paste(mean(unlist(lapply(CMJunctions_ControlJunctionsFilter, nrow))), "splice sites per sample, on average after"))
 ```
+
 #Remove junction if found in more than X CM samples (including the one being tested, default 4)
 ```{r}
 CMJunctions_CommonCMRemoved<-CMJunctionsFilter(CMJunctions_ControlJunctionsFilter,nThreshold )
+
+print(paste(mean(unlist(lapply(CMJunctions_ControlJunctionsFilter, nrow))), "splice sites per sample, on average before"))
+print(paste(mean(unlist(lapply(CMJunctions_CommonCMRemoved, nrow))), "splice sites per sample, on average after"))
 ```
 
 #Remove junction if BOTH or NEITHER splice sites of the junction are classified as "Canonical Splice Sites".  
@@ -156,11 +169,18 @@ CMCanonicalAnnotatedJunctions<- lapply(CMSplitJunctions, FilterOutBothNeitherCan
 
 #Select just junctions where exactly one side is canonical
 AllOneCanonicalJunctions<- lapply(CMCanonicalAnnotatedJunctions, function(x) {x[x$OneCanonical=="TRUE",]})
+
+print(paste(mean(unlist(lapply(CMCanonicalAnnotatedJunctions, nrow))), "splice sites per sample, on average before"))
+print(paste(mean(unlist(lapply(AllOneCanonicalJunctions, nrow))), "splice sites per sample, on average after"))
 ```
 
 #4. Annotate junctions with Norm score (used to priortize junctions for downstream analysis, e.g., IGV)
 ```{r}
 CMJunctions_NormScoreAnnotation<-lapply(AllOneCanonicalJunctions, GetNormScore)
+
+
+print(paste(mean(unlist(lapply(CMJunctions_NormScoreAnnotation, nrow))), "splice sites per sample, on average"))
+print(paste(mean(unlist(lapply(CMJunctions_NormScoreAnnotation, function(x) {nrow(x[x$NormScore>=0.1,])}))), "splice sites per sample, on average, with 10% norm score"))
 ```
 
 
@@ -205,6 +225,95 @@ wd<-"~/UKy/"
 write.csv(AllFilteredJunctions,paste(wd, "AllFilteredJunctions_", settings, ".csv",sep="_"))
 
 ```
+
+
+Considering this final list of filtered junctions: is there an exome variant nearby (say, within 20bp) of the "interesting" side of the junction?
+```{r}
+#Read in exome variants
+ExomeSNPs<-read.csv( "C:/Users/jenna/OneDrive/Documents/UKy/AllExomeVariants_NoFilter.csv",row.names="X")
+
+FindSNPsNearJunction<-function(Junctions, SNPs, InterestingAorB,DistanceFromJunction){
+  #remove chr1 from splice sitea/b names
+  Junctions$SpliceSiteA<- as.integer(gsub(".*:", "", Junctions$SpliceSiteA))
+  Junctions$SpliceSiteB<- as.integer(gsub(".*:", "", Junctions$SpliceSiteB))
+  
+  #Depending on whether you're looking at non-canonical A or B sites, get the start/end of the junction
+  if (InterestingAorB=="A"){
+    Sites<-Junctions[Junctions$A_Canonical=="FALSE", colnames(Junctions) %in% c("seqnames", "SpliceSiteA",
+                                                                                "geneid", "NormScore", "SampleID")]
+  } else{
+    Sites<-Junctions[Junctions$B_Canonical=="FALSE", colnames(Junctions) %in% c("seqnames", "SpliceSiteB",
+                                                                                "geneid", "NormScore", "SampleID")]
+  }
+  colnames(Sites)<-c("Site", "seqnames", "geneID","NormScore","Sample")
+  Sites$Site<-as.integer(Sites$Site)
+
+ 
+ #Add in a range of nt to the start/end of the site
+ Sites$start<-Sites$Site-DistanceFromJunction
+ Sites$end<-Sites$Site+DistanceFromJunction
+
+ 
+ #Remove sample 4 (for now)- no exome data rn
+ Sites<-Sites[!(Sites$Sample=="4"),]
+ 
+ #Remove any samples from the SNP data that aren't in the Asites
+ SNPs_Sites<-SNPs[SNPs$Sample %in% Sites$Sample,]
+ 
+ #Split exome into 1 df per sample
+ SNPs_Sites<-split(SNPs_Sites, f=SNPs_Sites$Sample)
+ 
+ #Convert SNPs to granges
+ SNPs_Sites_gr<-lapply(SNPs_Sites, function(x) {makeGRangesFromDataFrame(x[,c(1:3,7:8,11:12,13,19)],
+                                                                                     keep.extra.columns = TRUE)})
+ 
+ #Split junctions into 1 df per sample
+ Sites<-split(Sites, f=Sites$Sample)
+ 
+ #convert junctions to granges object
+ Sites_gr<- lapply(Sites, function(x) {makeGRangesFromDataFrame(x, keep.extra.columns = TRUE)})
+ 
+ #Get overlaps between junction range and exome variants, for each sample
+ AllJunctionsInRange<-list()
+ for (i in 1:length(Sites)){
+  site<-Sites_gr[[i]]
+  snps<-SNPs_Sites_gr[[i]]
+  JunctionsInRange<-subsetByOverlaps(site, snps)
+  AllJunctionsInRange[[i]]<-JunctionsInRangedi
+}
+ 
+ return(AllJunctionsInRange)
+}
+
+
+
+
+
+test<-FindSNPsNearJunction(AllFilteredJunctions, ExomeSNPs, "A", 50)
+
+jTest<-AllFilteredJunctions[AllFilteredJunctions$geneid=="7273",]
+sTest<-ExomeSNPs[ExomeSNPs$Sample==2 & ExomeSNPs$geneid=="7273",]
+
+
+
+
+
+
+
+
+
+
+
+
+
+```
+
+
+
+
+
+
+
 
 
 ```{r}
