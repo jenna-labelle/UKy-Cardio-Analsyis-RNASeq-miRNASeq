@@ -18,5 +18,5 @@
     a. Use Gonorazky et al approach: Compare median allelic expression values for SNPs from experimental samples to median AE values for SNPs from control samples
     b. Use beta-binomial testing: MBASED, available in Bioconductor
 
-![AI](C:\Users\jenna\OneDrive\Pictures\GitHubPics\AIApproach.png)
+![AI](VariantAnalysis/AIApproach.PNG)
 
