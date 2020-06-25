@@ -6,9 +6,9 @@
 RNASeq and miRNASeq analysis performed here, integrated with WES results
 
 ## Overall analyses:
-  1. RNASeq variant calling + comparison to WES
-  2. Pathogenic splice site identification and analysis
-  3. Allelic imbalance analysis
+  1. RNASeq variant calling + comparison to WES ("Variant Analysis")
+  2. Pathogenic splice site identification and analysis ("Junction Analysis")
+  3. Allelic imbalance analysis ("Variant Analysis")
   4. Differential expression- group comparisons informed by first 3 analyses
   5. miRNASeq differential expression and integration with RNASeq
   
