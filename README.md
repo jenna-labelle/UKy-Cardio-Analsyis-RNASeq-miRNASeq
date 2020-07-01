@@ -6,10 +6,10 @@
 RNASeq and miRNASeq analysis performed here, with a focus on multiple RNASeq analysis approaches. Integrated with WES results, analyzed previously by clinical bioFX group.
 
 ## Overall analyses:
-  1. RNASeq variant calling + comparison to WES *("Variant Analysis")*
-  2. Pathogenic splice site identification and analysis *("Junction Analysis")*
-  3. Allelic imbalance analysis *("Variant Analysis")*
-  4. Differential expression- group comparisons informed by first 3 analyses *("RNASeq_miRNASeq_Analysis")*
-  5. miRNASeq differential expression and integration with RNASeq *("RNASeq_miRNASeq_Analysis")*
+  1. RNASeq variant calling + comparison to WES - `Variant Analysis.Rmd`
+  2. Pathogenic splice site identification and analysis - `Junction Analysis.Rmd`
+  3. Allelic imbalance analysis - `Variant Analysis.Rmd`
+  4. Differential expression- group comparisons informed by first 3 analyses - `RNASeq_miRNASeq_Analysis.Rmd`
+  5. miRNASeq differential expression and integration with RNASeq - `RNASeq_miRNASeq_Analysis.Rmd`
   
  ***Detailed explanation of each analysis provided in readme contained in each folder.***
