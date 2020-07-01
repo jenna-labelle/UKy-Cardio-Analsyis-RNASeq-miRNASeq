@@ -51,7 +51,8 @@ While junctions are not filtered based on Norm Score, junctions with a score of 
 
 <br/>
 
-
+**Graphical summary of junction filtration approach:**
+![JunctionApproach](JunctionMethod.PNG)
 
 ## The resulting list of abberant splice sites is combined with allelic imbalance information *(see "VariantCalling")* to split abberant splice sites into **two potential biologically distinct groups:**
 
