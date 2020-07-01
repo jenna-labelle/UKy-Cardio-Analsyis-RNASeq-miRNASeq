@@ -18,4 +18,4 @@ Essentially, trying to **stratify CM samples into two groups, with two potential
 
 Graphical summary of approach:
 
-![miRNAApproach]miRNAMethod.PNG
+![miRNAApproach](miRNAMethod.PNG)
