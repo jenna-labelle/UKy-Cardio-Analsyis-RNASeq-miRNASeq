@@ -13,7 +13,8 @@ RNASeq and miRNASeq analysis performed here, with a focus on multiple RNASeq ana
   5. miRNASeq differential expression and integration with RNASeq - `RNASeq_miRNASeq_Analysis.Rmd`
   
  ***Detailed explanation of each analysis provided in readme contained in each folder.***
- **Graphical summary of overall approach:**
+ 
+## Graphical summary of overall approach:
  ![OverallApproac](OverallApproach.PNG)
  
  *Note: WES analysis and filtration performed prior to RNASeq. Results incorporated into this analysis, but the WES filtration strategy not included in this repository.*
