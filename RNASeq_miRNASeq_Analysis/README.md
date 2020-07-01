@@ -12,7 +12,7 @@ Essentially, trying to **stratify CM samples into two groups, with two potential
 4. Pathway analysis: do the TTN+/TTN- specific DEGs act through different pathways? How does this compare to the common CM pathways (from #1 DEGs)
 
 Graphical summary of approach (steps 2-4):
-![RNASeqApproach](RNASeq_DEMethod.png)
+![RNASeqApproach](RNASeq_DEMethod.PNG)
 
 ## miRNASeq Analysis approach:
 **Goal:** Identify potential miRNA biomarkers of DCM. In addition, identify miRNAs with high disease association by comparing differentially expressed miRNAs to their differentially expressed mRNA targets. Determine what pathways the targets of this subset of miRNAs act in.
