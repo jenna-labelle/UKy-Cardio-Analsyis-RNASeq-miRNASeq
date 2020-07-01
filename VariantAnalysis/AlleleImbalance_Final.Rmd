@@ -21,6 +21,7 @@ suppressPackageStartupMessages(library(PMCMR))
 
 Functions
 ```{r}
+#read in VCF, reformat and calculate allelic expression values
 AllelicExpressionFromVCF<- function(File, GOIRanges, TotalCoverage, RefCoverage, AltCoverage, NVariantsPerGene, QualityThreshold){
   #read in data
   vcf<- read.table(File)
@@ -66,11 +67,13 @@ AllelicExpressionFromVCF<- function(File, GOIRanges, TotalCoverage, RefCoverage,
   
 }
 
+#Add ID unique to that SNP (chr, location, ref/alt)
 AddUniqueSNPID<- function(df){
   df$SNPID<- paste(df$seqnames, ":", df$start, "_", df$Ref, "/", df$Alt, sep="")
   return(df)
 }
 
+#Recalculate allelic expression after performing other filtering
 NVariantsFilter_AllelicExpresion<- function(df, NVariantsPerGene){
   #subset by genes with at least n variants
   NVariants<- df%>% group_by(geneid) %>% mutate(NumberVariantsPerGene_AfterExome=n()) %>% as.data.frame()
