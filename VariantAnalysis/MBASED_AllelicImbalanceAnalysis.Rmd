@@ -3,13 +3,15 @@ title: "R Notebook"
 output: html_notebook
 ---
 
+Import libraries
 ```{r}
 library(MBASED)
 library(dplyr)
 ```
 
-functions
+Functions
 ```{r}
+#Summarize results from mbased
 summarizeASEResults_1s <- function(MBASEDOutput) {
   geneOutputDF <- data.frame(majorAlleleFrequency=assays(MBASEDOutput)$majorAlleleFrequency[,1],
                              pValueASE=assays(MBASEDOutput)$pValueASE[,1],
@@ -21,52 +23,77 @@ summarizeASEResults_1s <- function(MBASEDOutput) {
   return(list(geneOutput=geneOutputDF,
               locusOutput=lociOutputList))
 }
+
+#read in VCF, reformat and calculate allelic expression values (AE values not used here)
+AllelicExpressionFromVCF<- function(File, GOIRanges, TotalCoverage, RefCoverage, AltCoverage, NVariantsPerGene, QualityThreshold){
+  #read in data
+  vcf<- read.table(File)
+  vcf$V9<- lapply(vcf$V9, GetMaxofWeirdList) #Calls function- for multi alt alleles, gets max alt depth
+  vcf$V9<- as.integer(vcf$V9)
+  colnames(vcf)<- c("seqnames", "start", "ID", "Ref", "Alt", "Score", "Filter", "RefDepth", "AltDepth")
+  vcf$end<- vcf$start
+
+  #convert to granges object
+  vcf_gr<- makeGRangesFromDataFrame(vcf, keep.extra.columns = TRUE)
+
+  #Get overlaps of GOI ranges and all SNPs
+  ranges<- subsetByOverlaps(vcf_gr, GOIRanges)
+    
+  #Get the geneID names, associate back with the overlap GRanges object
+  hits<- findOverlaps(vcf_gr, GOIRanges)
+  geneid <- CharacterList(split(GOIRanges$gene_id[subjectHits(hits)],queryHits(hits)))
+  mcols(ranges) <- DataFrame(mcols(ranges), geneid)
+  Junctions_GeneIDs<- as.data.frame(ranges)
+  
+  #Calculate minor allele ratio and allelic expression (abs(0.5-minor allele ratio))
+  Junctions_GeneIDs$Coverage<- rowSums(Junctions_GeneIDs[,11:12])
+  Junctions_GeneIDs$MAF<- Junctions_GeneIDs$AltDepth/Junctions_GeneIDs$Coverage
+  Junctions_GeneIDs$AllelicExpression<- abs(0.5-Junctions_GeneIDs$MAF)
+  
+  #Subset by SNPs that meet coverage/quality thresholds
+  TotalCoverageFilter<- Junctions_GeneIDs[Junctions_GeneIDs$Coverage>=TotalCoverage,]
+  RefCoverageFilter<- TotalCoverageFilter[TotalCoverageFilter$RefDepth>=RefCoverage,]
+  AltCoverageFilter<- RefCoverageFilter[RefCoverageFilter$AltDepth>=AltCoverage,]
+  AltCoverageFilter<- AltCoverageFilter[AltCoverageFilter$Score >=QualityThreshold,]
+  
+  #subset by genes with at least n variants
+  AltCoverageFilter$geneid<-as.character(AltCoverageFilter$geneid)
+  NVariants<- AltCoverageFilter%>% group_by(geneid) %>% mutate(NumberVariantsPerGene=n()) %>% as.data.frame()
+  NVariantsFilter<- NVariants[NVariants$NumberVariantsPerGene>=NVariantsPerGene,]
+    
+  #median of these ratios for genes
+  MedianRatios<- NVariantsFilter %>% group_by(geneid) %>% mutate(MedianAllelicExpression=median(AllelicExpression)) %>% as.data.frame
+  MedianRatios<- MedianRatios[order(MedianRatios$geneid),]
+  
+  
+  return(MedianRatios)
+  
+}
+
+#Add ID unique to that SNP (chr, location, ref/alt)
+AddUniqueSNPID<- function(df){
+  df$SNPID<- paste(df$seqnames, ":", df$start, "_", df$Ref, "/", df$Alt, sep="")
+  return(df)
+}
+
+
+
+GetMaxofWeirdList<- function(WeirdList){
+  return(max(as.integer(unlist(strsplit(as.character(WeirdList), ",")))))
+}
 ```
 
 
-#Example from vignette
+
+#Read in vcf --> allelic depth/basic filtering OR pre-filtered variants, based on exome
+Two sources: raw VCF, or allelic depths calculated by ASEReadCounter
+Currently only applying MBASED to one sample, will expand to entire cohort
 ```{r}
-##a quick look at the main function
-args(runMBASED)
+#Input option 1: Pre-filtered, based on exome
+  mySNVs<-read.csv("D:/UKy/MergingRNASeq/MergedRuns_vcf.gz/NonCM_GOIFiltered/MERGED_FinalFilteredVariants_PercentCoverageExome_AllCMVariants.csv",row.names="X", stringsAsFactors = FALSE)
+  mySNVs<-mySNVs[mySNVs$Sample=="2",]
 
-## create GRanges object for SNVs of interest.
-## note: the only required column is 'aseID'
-mySNVs <- GRanges(
-seqnames=c('chr1', 'chr2', 'chr2', 'chr2'),
-ranges=IRanges(start=c(100, 1000, 1100, 1200), width=1),
-aseID=c('gene1', rep('gene2', 3)),
-allele1=c('G', 'A', 'C', 'A'),
-allele2=c('T', 'C', 'T', 'G')
-)
-names(mySNVs) <- c('gene1_SNV1', 'gene2_SNV1', 'gene2_SNV2', 'gene2_SNV3')
-
-## create input RangedSummarizedExperiment object
-mySample <- SummarizedExperiment(
-  assays=list(
-    lociAllele1Counts=matrix(
-      c(25, 10, 22, 14),
-      ncol=1,
-      dimnames=list(names(mySNVs),'mySample')),
-    lociAllele2Counts=matrix(c(20,16,15,16),
-                             ncol=1,dimnames=list(names(mySNVs),'mySample'))),
-  rowRanges=mySNVs)
-
-##example of use
-ASEresults_1s_haplotypesKnown <- runMBASED(
-ASESummarizedExperiment=mySample,
- isPhased=TRUE,
- numSim=10^6,
- BPPARAM = SerialParam()
- )
-
-summarizeASEResults_1s(ASEresults_1s_haplotypesKnown)$geneOutput
-```
-
-
-Using our data
-```{r}
-#Read in vcf- ASEReadCounter --> allelic depth/basic filtering OR pre-filtered variants, based on exome
-#AseReadCounter
+#Input option 2:  
   file_ase2<-"C:/Users/jenna/OneDrive/Documents/UKy/ASEReadCounterOutput_Reformated_Sample2.txt"
   
   #Process, get allelic depth
@@ -75,11 +102,11 @@ Using our data
   mySNVs<-rbind(mySNVs_CM, mySNVs_NonCM)
   
 
-  
-#Pre-filtered, based on exome
-  mySNVs<-read.csv("D:/UKy/MergingRNASeq/MergedRuns_vcf.gz/NonCM_GOIFiltered/MERGED_FinalFilteredVariants_PercentCoverageExome_AllCMVariants.csv",row.names="X")
-  mySNVs<-mySNVs[mySNVs$Sample=="2",]
 
+```
+
+#Reformat, convert to summarized experiment (required for MBASED)
+```{r}
 #subset and rename
 mySNVs<-mySNVs[,c(1,2,3,7,8,11,12,13)]
 colnames(mySNVs)<-c("seqnames", "start", "end", "Ref", "Alt", "allele1", "allele2", "aseID")
@@ -92,7 +119,7 @@ mySNVs_gr<- makeGRangesFromDataFrame(mySNVs, keep.extra.columns = TRUE)
 names(mySNVs_gr)<-mySNVs_gr$ID
 
 #Create summarized experiment with info on allelic depth
-myOwnSample<-SummarizedExperiment(
+se<-SummarizedExperiment(
   assays=list(
     lociAllele1Counts=matrix(
       mySNVs_gr$allele1,
@@ -104,10 +131,12 @@ myOwnSample<-SummarizedExperiment(
       dimnames=list(names(mySNVs_gr), "mySample"))),
   rowRanges=mySNVs_gr
     )
+```
 
-#run MBASES
+#run MBASES, extract and summarize results
+```{r}
 ASEresults_1s_haplotypesKnown <- runMBASED(
-ASESummarizedExperiment=myOwnSample,
+ASESummarizedExperiment=se,
  isPhased=TRUE,
  numSim=10^3,
  BPPARAM = SerialParam()
@@ -119,6 +148,5 @@ results$gene<-rownames(results)
 sig_results<-results[results$mySample<0.05,]
 
 nrow(sig_results)
-
 ```
 
