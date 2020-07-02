@@ -1,0 +1,36 @@
+
+#Outputs desired
+rule all:
+	input:
+		"2_Merged.vcf.idx",
+		"2_Merged_Selected.vcf",
+		"2_output.table"
+
+#Create indexed vcf, if not already created. Required to exist in same directory as vcf file for later steps	
+rule create_vcf_index:
+	input:
+		"{sample}_Merged.vcf"
+	output:
+		"{sample}_Merged.vcf.idx"
+	shell:
+		"gatk IndexFeatureFile --input {input}"
+
+#Filter vcfs to reduce compute time- only include biallelic SNPs
+rule filter_vcf:
+	input:
+		vcf="{sample}_Merged.vcf",
+		genome="/mnt/d/UKy/hg19.fa"
+	output:
+		"{sample}_Merged_Selected.vcf"
+	shell:
+		"gatk SelectVariants -R {input.genome} -V {input.vcf} -O {output} --select-type-to-include SNP --restrict-alleles-to BIALLELIC"
+
+#Run ASEReadCounter on filtered SNPs + raw bams
+rule run_ASEReadCounter:
+	input: 
+		bam="{sample}_Merged.alignments.bam",
+		vcf="{sample}_Merged_Selected.vcf"
+	output:
+		"{sample}_output.table"
+	shell:
+		"gatk ASEReadCounter -R /mnt/d/UKy/hg19.fa -I {input.bam} -V {input.vcf} -O {output}"
