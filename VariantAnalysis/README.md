@@ -22,6 +22,8 @@ RNASeq variant calling performed using Isaac variant caller with default setting
     
     b. Use ASEReadCounter from GATK (see https://appdoc.app/artifact/org.broadinstitute/gatk/4.0.4.0/org/broadinstitute/hellbender/tools/walkers/rnaseq/ASEReadCounter.html)
     
+    *SNP filtration and ASEReadCounter tool applied in `Snakemake` file*
+    
 2. Statistical testing for allelic imbalance. Two options considered:
 
     a. Use Gonorazky et al approach: Compare median allelic expression values for SNPs from experimental samples to median AE values for SNPs from control samples ('`AlleleImbalance_Final.Rmd`)
