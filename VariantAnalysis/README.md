@@ -22,7 +22,7 @@ RNASeq variant calling performed using Isaac variant caller with default setting
     
     b. Use ASEReadCounter from GATK (see https://appdoc.app/artifact/org.broadinstitute/gatk/4.0.4.0/org/broadinstitute/hellbender/tools/walkers/rnaseq/ASEReadCounter.html)
     
-    *SNP filtration and ASEReadCounter tool applied in `Snakemake` file*
+    *SNP filtration and ASEReadCounter tool applied in `Snakefile` file*
     
 2. Statistical testing for allelic imbalance. Two options considered:
 
