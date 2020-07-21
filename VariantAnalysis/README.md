@@ -12,9 +12,19 @@ RNASeq variant calling performed using Isaac variant caller with default setting
 
 **Goal:** Identify genes that possess significant allelic imbalance, indicating potential NMD
 
-**Two steps:**
+**Three steps:**
 
-*Note: prior to performing these steps, WASP should ideally be used to reduce reference allele bias, a major problem in allelic imbalance analyses*
+1. Account for reference allele bias using WASP (https://github.com/bmvdgeijn/WASP)
+    
+    a. Split SNPs from single csv --> 1 txt file per chromosome ( `wasp_SplitSNPsByChromosome.sh` )
+    
+    b. Perform alignment as usual (STAR alignment using BaseSpace sequencing hub used here; default settings)
+    
+    c. Switch alleles in all sample bams (`wasp_PreReMap.sh`)
+    
+    d. Remap fastqs from switched alleles- same as step b, but no trimming of adapters
+    
+    e. Check if reads remap to the same place as before switching. If not: remove. If they do: merge with un-switched reads from step c. (`wasp_PostReMap.sh`)
 
 1. Filter RNASeq SNPs used for analysis. Two options considered:
 
@@ -22,7 +32,7 @@ RNASeq variant calling performed using Isaac variant caller with default setting
     
     b. Use ASEReadCounter from GATK (see https://appdoc.app/artifact/org.broadinstitute/gatk/4.0.4.0/org/broadinstitute/hellbender/tools/walkers/rnaseq/ASEReadCounter.html)
     
-    *SNP filtration and ASEReadCounter tool applied in `Snakefile` file*
+    *ASEReadCounter tool applied in `Snakefile` file*
     
 2. Statistical testing for allelic imbalance. Two options considered:
 
