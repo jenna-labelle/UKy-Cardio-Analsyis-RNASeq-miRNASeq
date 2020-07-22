@@ -14,8 +14,7 @@ RNASeq variant calling performed using Isaac variant caller with default setting
 
 **Three steps:**
 
-**1. Account for reference allele bias using WASP (https://github.com/bmvdgeijn/WASP)**
-    
+1. Account for reference allele bias using WASP (https://github.com/bmvdgeijn/WASP)
     a. Split SNPs from single csv --> 1 txt file per chromosome ( `wasp_SplitSNPsByChromosome.sh` )
     
     b. Perform alignment as usual (STAR alignment using BaseSpace sequencing hub used here; default settings)
@@ -26,7 +25,7 @@ RNASeq variant calling performed using Isaac variant caller with default setting
     
     e. Check if reads remap to the same place as before switching. If not: remove. If they do: merge with un-switched reads from step c. (`wasp_PostReMap.sh`)
 
-**2. Filter RNASeq SNPs used for analysis. Two options considered:**
+2. Filter RNASeq SNPs used for analysis. Two options considered:
 
     a. Use Gonorazky et al approach: filter by depth and #SNPs/gene. Additionaly, we also filtered based on Exome SNPs ('`AlleleImbalance_Final.Rmd`)
     
@@ -34,7 +33,7 @@ RNASeq variant calling performed using Isaac variant caller with default setting
     
     *ASEReadCounter tool applied in `Snakefile` file*
     
-**3. Statistical testing for allelic imbalance. Two options considered:**
+3. Statistical testing for allelic imbalance. Two options considered:
 
     a. Use Gonorazky et al approach: Compare median allelic expression values for SNPs from experimental samples to median AE values for SNPs from control samples ('`AlleleImbalance_Final.Rmd`)
     
