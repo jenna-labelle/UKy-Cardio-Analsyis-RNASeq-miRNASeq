@@ -27,7 +27,7 @@ RNASeq variant calling performed using Isaac variant caller with default setting
 
 2. Filter RNASeq SNPs used for analysis. Two options considered:
 
-    a. Use Gonorazky et al approach: filter by depth and #SNPs/gene. Additionaly, we also filtered based on Exome SNPs ('`AlleleImbalance_Final.Rmd`)
+    a. Use Gonorazky et al approach: filter by depth and #SNPs/gene. Additionaly, we also filtered based on Exome SNPs ('`AlleleImbalance_FromVcfs.Rmd`)
     
     b. Use ASEReadCounter from GATK (see https://appdoc.app/artifact/org.broadinstitute/gatk/4.0.4.0/org/broadinstitute/hellbender/tools/walkers/rnaseq/ASEReadCounter.html)
     
@@ -35,7 +35,7 @@ RNASeq variant calling performed using Isaac variant caller with default setting
     
 3. Statistical testing for allelic imbalance. Two options considered:
 
-    a. Use Gonorazky et al approach: Compare median allelic expression values for SNPs from experimental samples to median AE values for SNPs from control samples ('`AlleleImbalance_Final.Rmd`)
+    a. Use Gonorazky et al approach: Compare median allelic expression values for SNPs from experimental samples to median AE values for SNPs from control samples ('`AlleleImbalance_FromVcfs.Rmd` or `AlleleImbalance_FromASEReadCounter.Rmd`)
     
     b. Use beta-binomial testing: MBASED, available in Bioconductor (`MBASED_AllelicImbalanceAnalysis.Rmd`)
 
