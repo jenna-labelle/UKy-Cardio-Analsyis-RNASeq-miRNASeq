@@ -165,8 +165,21 @@ files=c("1", "2", "3", "4", "5", "6", "7", "8", "9", "11", "12", "13", "15", "16
 wd<-"D:/UKy/PostWASP_AlleleCounts/"
 filepaths=paste(wd, "GOIIntersect_Reformated_ASECounts_", files, ".txt", sep="")
 
-#CM: read in filepaths, calculate allelic depth + add geneID info + coverage filters  
-AllAllelicExpression<- lapply(filepaths, AllelicExpressionFromASEReadCounter, genes, 15,2,2,3)
+#read in filepaths, calculate allelic depth + add geneID info + coverage filters  
+AllAllelicExpression<- lapply(filepaths, AllelicExpressionFromASEReadCounter, genes, 15,2,2,0)
+```
+
+#Extra (optional) filters
+1. Filter by exome SNPs
+2. Filter by % of total that alt/ref make up
+3. Filter by N SNPs/gene
+```{r}
+#Set options
+Exomequal<-30
+Exome_AltScore<-2
+Exome_RefScore<-2
+PercentThreshold<- .1
+nvariantsPerGene<- 3
 ```
 
 #Read in exome data
@@ -194,12 +207,18 @@ for (i in 1:length(AllAllelicExpression_Exome)){
   colnames(df)<- c("seqnames", "start", "ID", "Ref", "Alt", "Score", "Qual", "V8", "V9" )
   AllAllelicExpression_Exome_Renamed[[i]]<-df
 }
+
+#Filter exome SNPs: Coverage for each allele >=2, qual > 40
+AllAllelicExpression_Exome_Filtered<- lapply(AllAllelicExpression_Exome_Renamed, function(x){
+  x[x$Score>=Exomequal & x$V8 >=Exome_RefScore & x$V9 >=Exome_AltScore,]
+})
 ```
+
 
 #Extra filter 1: filter by exome SNPs
 ```{r}
 #Add column to all variants (in exome and RNASeq data) with unique SNP ID
-Exome_UniqueSNPID<-lapply(AllAllelicExpression_Exome_Renamed, AddUniqueSNPID)
+Exome_UniqueSNPID<-lapply(AllAllelicExpression_Exome_Filtered, AddUniqueSNPID)
 RNA_UniqueSNPID<- lapply(AllAllelicExpression, AddUniqueSNPID)
 
 #Combine all variants into one list
@@ -211,27 +230,23 @@ Exome_AllSNPs <- multi_full[order(multi_full[,'SNPID'],-multi_full[,'Score']),]
 Exome_AllSNPs<- Exome_AllSNPs[!duplicated(Exome_AllSNPs$SNPID),] 
 
 #Filter RNASeq variants based on filtered exome variants
-RNA_VariantsInExome<- lapply(RNA_UniqueSNPID, function(x) {x[x$SNPID %in% Exome_AllSNPs$SNPID,]})  #102 variants/sample on average
+RNA_VariantsInExome<- lapply(RNA_UniqueSNPID, function(x) {x[x$SNPID %in% Exome_AllSNPs$SNPID,]})  
 ```
 
 #Extra Filter 2: Alt/Ref coverage by PERCENTAGE OF TOTAL COVERAGE. This is in addition to the raw thresholds set when importing data
 ```{r}
-PercentThreshold<- 0.2
-RNA_VariantsInExome_Ref<- lapply(AllAllelicExpression, function(x){
+RNA_VariantsInExome<-AllAllelicExpression #If not performing exome filtering
+RNA_VariantsInExome_Ref<- lapply(RNA_VariantsInExome, function(x){
   x[x$RefDepth>=round(x$Coverage*PercentThreshold),]
 })
 RNA_VariantsInExome_Alt<- lapply(RNA_VariantsInExome_Ref, function(x){
   x[x$AltDepth>=round(x$Coverage*PercentThreshold),]
-}) #down to 100 variants in each sample (on average)
-
-s1<-RNA_VariantsInExome_Alt[[1]]
-print(nrow(s1[s1$geneid=="7273",]))
+}) 
 ```
 
 #Recalculate median allelic expression values based on this new dataset of variants- need to re-filter by nVariants/gene
 ```{r}
-RNA_ReFilterAfterExome<- lapply(RNA_VariantsInExome_Alt, NVariantsFilter_AllelicExpresion, NVariantsPerGene=3) #down to 83 variants per sample (on average)
-
+RNA_ReFilterAfterExome<- lapply(RNA_VariantsInExome_Alt, NVariantsFilter_AllelicExpresion, NVariantsPerGene=nvariantsPerGene) 
 
 #Add columns for mean allelic expression + SD Allelic Expression
 RNA_AddMean<- lapply(RNA_ReFilterAfterExome, function(x){
@@ -255,7 +270,7 @@ RNA_MedianFinal_rbind<-do.call(rbind, RNA_MedianFinal)
 
 #bind all median allelic expression values into 1 (keepin just SNP info + Sample + MedianAllelicExpression + gene), then write to csv
 MediansAll<-  do.call(rbind, RNA_MedianFinal)
-MediansAll<- MediansAll[order(MediansAll$geneid),colnames(MediansAll) %in% c("geneid","NumberVariantsPerGene", "MedianAllelicExpression", "MeanAllelicExpression", "SDAllelicExpression", "Sample")]
+MediansAll<- MediansAll[order(MediansAll$geneid),colnames(MediansAll) %in% c("geneid","NumberVariantsPerGene_AfterExome", "MedianAllelicExpression", "MeanAllelicExpression", "SDAllelicExpression", "Sample")]
 ```
 
 #Export results
@@ -292,18 +307,18 @@ All_sigTest$Sample<-as.factor(All_sigTest$Sample)
 All_sigTest$Sample<- ordered(All_sigTest$Sample, levels= c("Control",1:9,11:13,15:19)) #for all samples
 
 #Split dataframe into a list of separate dfs for each gene
-SplitByGene<- split(All_sigTest, f=All_sigTest$geneid) #39 genes 
+SplitByGene<- split(All_sigTest, f=All_sigTest$geneid) 
 
 #only keep gene if there's at least 1 variant in a non-control sample + 3 control samples
 #At least 3 variants in a control:
 NControls<- unlist(lapply(SplitByGene, function(x) {
   length(grep("Control", x$Sample))
 }))
-EnoughControls<-SplitByGene[NControls>=3] #down to just 21 genes 
+EnoughControls<-SplitByGene[NControls>=1] 
 
 #At least 1 CM sample:
 NSamples<- lapply(EnoughControls, function(x) { x %>% filter(Sample!= "Control") %>% group_by(Sample) %>% mutate(NumberVariants=n()) %>%  filter(NumberVariants>=1) %>% as.data.frame})
-EnoughSamples<- EnoughControls[unlist(lapply(NSamples,nrow))>=1] #none removed
+EnoughSamples<- EnoughControls[unlist(lapply(NSamples,nrow))>=1] 
 
 
 #initialize empty list for appending significant gene/samples to
@@ -318,7 +333,7 @@ for (i in 1:length(EnoughSamples)){
   colnames(pvalue)<- "Pvalue"
   pvalue$Sample<-rownames(pvalue)
   pvalue$gene<- variants$geneid[1]
-  sig<-pvalue[pvalue$Pvalue<0.1,]
+  sig<-pvalue[pvalue$Pvalue<.1,]
   SigAllelicExpression<- rbind(SigAllelicExpression, sig)
   AllAlleicExpression_Dunn<-rbind(AllAlleicExpression_Dunn, pvalue)
   
@@ -329,7 +344,6 @@ SigAllelicExpression$UniqueID<- paste(SigAllelicExpression$Sample, SigAllelicExp
 MediansAll$UniqueID<- paste(MediansAll$Sample, MediansAll$geneid, sep=":")
 SigGenes_Medians<- MediansAll[MediansAll$UniqueID %in% SigAllelicExpression$UniqueID,]
 
-SigAllelicExpression[SigAllelicExpression$gene=="7273",]
 
 #Add in controls-mean/median/SD of allelic expression across all 5 control samples
 #can't just take mean of these metrics across the 5 samples- there's different n of variants supporting these metrics
@@ -345,9 +359,13 @@ AllControls_SigGenes<- AllControls_AEMetrics[AllControls_AEMetrics$geneid %in% S
 ControlsandCM<- full_join(SigGenes_Medians, AllControls_SigGenes, by="geneid")
 
 #Merge this with significance info- pvalue from dunn test
+SigAllelicExpression<-SigAllelicExpression[SigAllelicExpression$UniqueID %in% ControlsandCM$UniqueID,]
 Sig_AndAllelicExpressionMetrics_id<- cbind(SigAllelicExpression, ControlsandCM, by="UniqueID")
 Sig_AndAllelicExpressionMetrics<- Sig_AndAllelicExpressionMetrics_id[,c(4,3,2,1,6:9,11:13)]
 
+#Filter by gene/samples that are MORE IMBALANCED than controls
+Sig_AndAllelicExpressionMetrics<-Sig_AndAllelicExpressionMetrics %>% mutate(DiffFromControls=MedianAllelicExpression - Controls_MeanAllelicExpression) %>% as.data.frame()
+Sig_AndAllelicExpressionMetrics_Imbalanced<- Sig_AndAllelicExpressionMetrics[Sig_AndAllelicExpressionMetrics$DiffFromControls>0,]
 
 #Prep for export: all the SNPs that caused the significant gene/sample pairings. Will merge this with the above table into one file manually in excel.
 AllFilteredSNPs<- All_NoIndels
@@ -355,10 +373,23 @@ AllFilteredSNPs$UniqueID<- paste(AllFilteredSNPs$Sample, AllFilteredSNPs$geneid,
 AllFilteredSNPs_SigGeneSamples<- AllFilteredSNPs[AllFilteredSNPs$UniqueID %in% Sig_AndAllelicExpressionMetrics_id$UniqueID,]
 
 #Add in the number of variants in significant sample/gene pairings- for individual SNPs
-AllFilteredSNPS_NumberVariantsPer<-AllFilteredSNPs %>% group_by(UniqueID) %>% mutate(NumberVariantsPerGene=n()) %>% as.data.frame()
-AllFilteredSNPS_NumberVariantsPer<-AllFilteredSNPS_NumberVariantsPer[,23:24]
-AllFilteredSNPs_SigGeneSamples<- merge(AllFilteredSNPS_NumberVariantsPer,AllFilteredSNPs_SigGeneSamples, by="UniqueID")
+#AllFilteredSNPS_NumberVariantsPer<-AllFilteredSNPs %>% group_by(UniqueID) %>% mutate(NumberVariantsPerGene=n()) %>% as.data.frame()
+#AllFilteredSNPS_NumberVariantsPer<-AllFilteredSNPS_NumberVariantsPer[,21:22]
+#AllFilteredSNPs_SigGeneSamples<- merge(AllFilteredSNPS_NumberVariantsPer,AllFilteredSNPs_SigGeneSamples, by="UniqueID")
 
 #Add in the number of variants in sig gene/pairings- for overall gene/sample table
-Sig_AndAllelicExpressionMetrics<-merge(Sig_AndAllelicExpressionMetrics, AllFilteredSNPS_NumberVariantsPer[!(duplicated(AllFilteredSNPS_NumberVariantsPer)),],by="UniqueID")
+#Sig_AndAllelicExpressionMetrics<-merge(Sig_AndAllelicExpressionMetrics, AllFilteredSNPS_NumberVariantsPer[!(duplicated(AllFilteredSNPS_NumberVariantsPer)),],by="UniqueID")
 ```
+
+
+#Print out results for optimization
+```{r}
+print(paste("Number of variants after coverage filtering:", sum(unlist(lapply(AllAllelicExpression, nrow)))))
+print(paste("Number of variants after final filtering:", sum(unlist(lapply(RNA_ReFilterAfterExome,nrow)))))
+ttnTested<- Sig_AndAllelicExpressionMetrics_id[Sig_AndAllelicExpressionMetrics_id$gene=="7273",c(1,2,6,7,12)]
+akaptested<- Sig_AndAllelicExpressionMetrics_id[Sig_AndAllelicExpressionMetrics_id$gene=="10142",c(1,2,6,7,12)]
+print(paste("Number of sample with TTN tested for AI:", nrow(ttnTested[ttnTested$Sample,])))
+ttnTested
+
+```
+
