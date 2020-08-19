@@ -122,9 +122,9 @@ GetMBASEDResults<- function(se, numsim){
   ##Get results
   results<-as.data.frame(assays(ASEresults)$pValueASE)
   results$gene<-rownames(results)
-  sig_results<-results[results$mySample<0.05,]
+  sig_results<-results
 
-  print(paste("Sig genes:", nrow(sig_results)))
+  print(paste("Tested genes:", nrow(sig_results)))
   return(sig_results)
 
 }
@@ -140,10 +140,10 @@ txdb <- TxDb.Hsapiens.UCSC.hg19.knownGene
 genes <- genes(TxDb.Hsapiens.UCSC.hg19.knownGene)
 
 #Samples to read in
-files=c("1", "2", "3", "4", "5", "6", "7", "8", "9", "11", "12", "13", "15", "16", "17", "18", "19")
+files=c("1", "2", "3", "4", "5", "6", "7", "8", "9", "11", "12", "13", "15", "16", "17", "18", "19", paste("Control", 1:4, sep="") )
 
 #File paths to ASEReadCounter output files (already filtered by GOI)
-filepaths=paste("D:/UKy/PostWASP_AlleleCounts/", "GOIIntersect_Reformated_ASECounts_", files, ".txt", sep="")
+filepaths=paste("E:/UKy/PostWASP_AlleleCounts/", "GOIIntersect_Reformated_ASECounts_", files, ".txt", sep="")
 
 #read in filepaths, calculate allelic depth + add geneID info + coverage filters  
 mySNVs<- lapply(filepaths, AllelicExpressionFromASEReadCounter, genes, 15,2,2,3)
@@ -151,16 +151,15 @@ mySNVs<- lapply(filepaths, AllelicExpressionFromASEReadCounter, genes, 15,2,2,3)
 
 #Read in exome data
 ```{r}
-#Some preliminary filtering included here: 2x Ref and Alt coverage + >= 40 qual score
 
 #Read in for exome vcf data- CM genes
-wd<-"D:/UKy/Exome_Vcf/CMGenesROI_AllelicDepth/" #Set working directory
+wd<-"E:/UKy/Exome_Vcf/CMGenesROI_AllelicDepth/" #Set working directory
 Samples<- c(1:3,5:19) #Samples to be read in
 Files<- paste(wd, "AllelicDepth_GOIFilteredvcf_HeaderRemoved_Tube-", Samples, "-clean.snp.txt",sep="") #set file names
 CM_AllAllelicExpression_Exome<-lapply(Files, read.table)
 
 #Read in for exome vcf data- Non CM genes
-wd<-"D:/UKy/Exome_Vcf/NonCMGenesROI_AllelicDepth/" #Set working directory
+wd<-"E:/UKy/Exome_Vcf/NonCMGenesROI_AllelicDepth/" #Set working directory
 Samples<- c(1:3,5:19) #Samples to be read in
 Files<- paste(wd, "AllelicDepth_GOIFilteredvcf_HeaderRemoved_Tube-", Samples, "-clean.snp.txt",sep="") #set file names
 NonCM_AllAllelicExpression_Exome<-lapply(Files, read.table)
@@ -197,17 +196,33 @@ Exome_AllSNPs<- Exome_AllSNPs[!duplicated(Exome_AllSNPs$SNPID),]
 RNA_VariantsInExome<- lapply(RNA_UniqueSNPID, function(x) {x[x$SNPID %in% Exome_AllSNPs$SNPID,]}) 
 ```
 
+#Extra Filter 2: Alt/Ref coverage by PERCENTAGE OF TOTAL COVERAGE. This is in addition to the raw thresholds set when importing data
+```{r}
+RNA_VariantsInExome_Ref<- lapply(RNA_VariantsInExome, function(x){
+  x[x$RefDepth>=round(x$Coverage*.1),]
+})
+RNA_VariantsInExome_Alt<- lapply(RNA_VariantsInExome_Ref, function(x){
+  x[x$AltDepth>=round(x$Coverage*.1),]
+}) 
+
+```
 
 ```{r}
 #Convert to summarized experiments- necessary for MBASED input  
-se<- ConvertToSE_MBASEDInput(RNA_VariantsInExome[[7]])
-allSE<- lapply(RNA_VariantsInExome, ConvertToSE_MBASEDInput)
+allSE<- lapply(RNA_VariantsInExome_Alt, ConvertToSE_MBASEDInput)
 ```
+
+
+
 
 #Run MBASED
 ```{r}
+set.seed(6) #option 1
+set.seed(64) #option 2
+
 #Run MBASED and extract results
 allMBASED<-lapply(allSE, GetMBASEDResults, 10^3)
+
 
 #Add sample ID column
 allMBASED_withSample<-list()
@@ -219,7 +234,121 @@ for (sample in 1:length(files)){
 
 #Merge results into one df
 allResults<- allMBASED_withSample %>% Reduce(function(dtf1,dtf2) full_join(dtf1,dtf2,by="gene"), .)
+rownames(allResults)<-allResults$gene
+allResults<-allResults[,!(colnames(allResults)=="gene")]
 
-write.csv(allResults, "C:/Users/jenna/OneDrive/Documents/UKy/MBASEDResults_PostWASP_ExomeFiltered.csv")
+
+
+#write.csv(allResults, "C:/Users/jenna/OneDrive/Documents/UKy/MBASEDResults_PostWASP_ExomeFiltered.csv")
+```
+
+#Multiple testing correction
+```{r}
+
+MTC<-c("bonferroni", "hochberg", "fdr")
+adjusted<-apply(allResults,2,function(x){
+        as.data.frame(p.adjust(na.omit(x), method=MTC[1], n=length(na.omit(x))))
+})
+
+
+#Rename columns correctly, add geneid column
+adjusted_renamed<-list()
+for (sample in 1:length(adjusted)){
+        df<-adjusted[[sample]]
+        df$gene<-rownames(df)
+        colnames(df)<- c(files[sample], "gene")
+        adjusted_renamed[[sample]]<-df
+}
+
+#Merge adjusted results into 1 df
+adjusted_allResults<- adjusted_renamed %>% Reduce(function(dtf1,dtf2) full_join(dtf1,dtf2,by="gene"), .)
+rownames(adjusted_allResults)<-adjusted_allResults$gene
+adjusted_allResults<-adjusted_allResults[,!(colnames(adjusted_allResults)=="gene")]
+
+
+adjusted_allResults[rownames(adjusted_allResults)=="7273",]
+```
+
+#Only keep genes that have sig AI (<0.01) in a CM sample and NO CONTROLS have sig AI (<0.01)
+```{r}
+#Subset to genes with sig AI in a CM sample
+        #data frame of T/F/NA for each gene across all CM samples (<0.01)
+        SigCMGenes<-as.data.frame(apply(adjusted_allResults[,1:17], 2, function(x){
+                x<0.01
+        }))
+
+        #Replace NAs with FALSE
+        CM_NAReplace<-SigCMGenes%>% mutate_each(funs(replace(., is.na(.), F))) 
+        
+        #Subset results to only keep genes with a TRUE in at least 1 CM sample
+        SigCM_allResults<-adjusted_allResults[rowSums(CM_NAReplace)>=1,]
+
+#Subset to genes with no sig AI in any controls
+
+        #Subset by controls:
+        controls_adjusted<-SigCM_allResults[,grep("Control", colnames(SigCM_allResults))]
+
+        #True/False matrix for sig threshold
+        controls_sig<-as.data.frame(apply(controls_adjusted,2, function(x){
+                x<0.01
+        }))
+
+        #Replace NAs with FALSE
+        controls_NAReplace<-controls_sig%>% mutate_each(funs(replace(., is.na(.), F))) 
+
+        #Subset all samples by controls- only keep if all controls are below sig thresh
+        adjusted_NotSiginControls<-SigCM_allResults[rowSums(controls_NAReplace)==0,]
+
+wd<-"C:/Users/Jenna/Documents/UKy_RNASeq/"
+write.csv(adjusted_NotSiginControls, paste(wd, "MBASEDResults_15X2X_Exome_10Percent_Bonf_SiginCMNotInControls.csv",sep=""))
+```
+
+#Get variants in sig AI genes, export
+```{r}
+#Add sample ID to variants
+AllFilteredVariants_SigAI<-list()
+count<-1
+for (sample in 1:length(RNA_VariantsInExome_Alt)){
+        df<-RNA_VariantsInExome_Alt[[sample]]
+        df$Sample<-files[sample]
+        AllFilteredVariants_SigAI[[count]]<-df
+        count=count+1
+}
+
+#Merge into 1 df
+AllFilteredVariants_SigAI_merge<-do.call("rbind", AllFilteredVariants_SigAI)
+AllFilteredVariants_SigAI_merge$UniqueID<-paste(AllFilteredVariants_SigAI_merge$geneid,
+                                                AllFilteredVariants_SigAI_merge$Sample, sep=":")
+
+#Read in Sig AI results
+wd<-"C:/Users/Jenna/Documents/UKy_RNASeq/"
+AI<- read.csv(paste(wd, "MBASEDResults_15X2X_Exome_10Percent_Bonf_SiginCMNotInControls.csv",sep=""), row.names = "X")
+
+#Get unique IDs corresponding to sig AI genes
+sigAI<-apply(AI, 1,function(x){
+        names(x)[x<0.01]
+})
+genes<-names(sigAI)
+
+sigAI_UniqueID<-list()
+count=1
+for (i in 1:length(genes)){
+        gene<-genes[i]
+        samples<-unlist(unname(sigAI[i]))
+        samples<-gsub("X", "", samples)
+        sigAI_UniqueID[count]<-list(paste(gene, samples[!(is.na(samples))],sep=":"))
+        count=count+1
+}
+
+
+#Select variants in gene/sample with sig AI
+SigAIVariants<- AllFilteredVariants_SigAI_merge[AllFilteredVariants_SigAI_merge$UniqueID %in% unlist(sigAI_UniqueID),]
+
+#write to csv
+write.csv(SigAIVariants,paste(wd, "AllVariantsInSigAIGenes.csv",sep=""))
+```
+
+```{r}
+sessionInfo()
 ```
 
