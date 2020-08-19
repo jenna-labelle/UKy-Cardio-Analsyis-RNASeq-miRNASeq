@@ -2,12 +2,19 @@
 title: "R Notebook"
 output: html_notebook
 ---
+```{r}
+library(reshape2)
+```
 
 #Read in Allelic imbalance and junction analysis results
 ```{r}
-wd<-"C:/Users/jenna/OneDrive/Documents/UKy/"
-AI<-read.csv(paste(wd, "PostDunn_Imbalanced_GeneSamples.csv", sep=""))
-junctions<-read.csv(paste(wd, "_AllFilteredJunctions__Settings__5_3_0.1_0.1_3_.csv", sep=""))
+AI<-read.csv("C:/Users/Jenna/Documents/UKy_RNASeq/MBASEDResults_15X2X_Exome_10Percent_Bonf_SiginCMNotInControls.csv")
+AI_melt<-melt(AI)
+colnames(AI_melt)<-c("gene", "Sample", "pvalue")
+AI_melt$Sample<-gsub("X", "", AI_melt$Sample)
+
+
+junctions<-read.csv("C:/Users/jenna/OneDrive/Documents/UKy/_AllFilteredJunctions__Settings__5_3_0.1_0.1_3_.csv")
 junctions$UniqueID<- paste(junctions$SampleID, junctions$geneid,sep=":")
 ```
 
