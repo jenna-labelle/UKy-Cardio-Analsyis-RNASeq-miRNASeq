@@ -1,0 +1,87 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+#Import raw counts for individual samples (difference sources, described below) and merge into one dataset
+```{r}
+#Three types of data: 
+  #1: samples run in both run 1 and run 2, fastqs merged --> alignment
+  #2: samples run in only run 1 (10 and 14)
+  #3: samples run in only run 2 (controls)
+
+extension<- ".counts.GENES"
+
+############
+#Dataset 1 #
+############
+
+#set list of files- merged files
+merged_readwd<- "E:/UKy/MergingRNASeq/MergedRuns_RawCounts/"
+merged_samples<- c(1:9,11:13,15:19)
+merged_files<-c(paste(merged_samples, "_Merged", extension,sep=""))
+
+#Read in counts data
+merged_AllCounts<-list()
+for (i in 1:length(merged_files)){
+  file<- read.table(paste(merged_readwd, merged_files[i], sep=""))
+  colnames(file)<- c("GeneID", paste("X", merged_samples[i], sep=""))
+  merged_AllCounts[[i]]<- file
+}
+
+############
+#Dataset 2 #
+############
+
+#set list of files- run 1 files (10 and 14)
+run1_readwd<- "//Cifs2/rcdata$/UKRNASeq/RawCounts/ORIGINALRUN_NotInUse/"
+run1_samples<- c(1:19) #S2 included for now- will change to merged set later
+run1_files<-c(paste(run1_samples, extension,sep=""))
+
+#Read in counts data
+run1_AllCounts<-list()
+for (i in 1:length(run1_files)){
+  file<- read.table(paste(run1_readwd, run1_files[i], sep=""))
+  colnames(file)<- c("GeneID", paste("X", run1_samples[i], sep=""))
+  run1_AllCounts[[i]]<- file
+}
+
+############
+#Dataset 3 #
+############
+
+#set list of files- run 2 files (controls)
+run2_readwd<- "//Cifs2/rcdata$/UKRNASeq/RawCounts/"
+run2_samples<- c(c(1:9, 11:13, 15:19),paste("UK-Control-", c(1:5), sep=""))
+run2_files<-c(paste(run2_samples, extension,sep=""))
+
+#Read in counts data
+run2_AllCounts<-list()
+for (i in 1:length(run2_files)){
+  file<- read.table(paste(run2_readwd, run2_files[i], sep=""))
+  colnames(file)<- c("GeneID", paste("X", run2_samples[i], sep=""))
+  colnames(file)[2]<- gsub("XUK", "UK",colnames(file)[2]) #removing "X" in column name, if it's for a control
+  run2_AllCounts[[i]]<- file
+}
+
+
+#Select just the samples from run 1 and run 2 to be used- that is, NON-MERGED samples. Needs to be at least Samples 10/14 from run 1 and controls from run 2
+#Run 1:
+run1_PickSamples<- paste("X", c(10,14),sep="")
+run1_SelectedSamples<- unlist(lapply(run1_AllCounts, function(x) {colnames(x)[2] %in% run1_PickSamples}))
+run1_SelectedSamples_Counts<- run1_AllCounts[run1_SelectedSamples]
+
+#Run 2:
+run2_PickSamples<- paste("UK-Control-", c(1:5), sep="")
+run2_SelectedSamples<- unlist(lapply(run2_AllCounts, function(x) {colnames(x)[2] %in% run2_PickSamples}))
+run2_SelectedSamples_Counts<- run2_AllCounts[run2_SelectedSamples]
+
+#Merge all counts together into one list, then into one DF
+AllCounts<- c(merged_AllCounts, run1_SelectedSamples_Counts, run2_SelectedSamples_Counts)
+counts<- AllCounts %>%
+    Reduce(function(dtf1,dtf2) left_join(dtf1,dtf2,by="GeneID"), .)
+
+#write to csv for later use
+write.csv(counts, paste(run2_readwd, "RawCounts_Run1S10.14_Run2Controls_AllOthersMerged.csv", sep=""))
+
+```

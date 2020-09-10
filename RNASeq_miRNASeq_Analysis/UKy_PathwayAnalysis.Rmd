@@ -1,0 +1,304 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+Libraries
+```{r}
+suppressPackageStartupMessages(library(clusterProfiler))
+suppressPackageStartupMessages(library(fgsea))
+```
+
+Functions
+```{r}
+#Run gsea using clusterprofiler
+RunClusterProfilerGSEA<-function(DEGResults, gmtFile, pvalueThresh){
+        #Create gene list: gene ID + adjusted p value
+        DEGdf<-data.frame(geneID=rownames(DEGResults), 
+                          padj=DEGResults$padj, 
+                          log2FC=DEGResults$log2FoldChange)
+        
+        #Order genes by log2FC and convert to list format 
+        DEGdf_ordered<-DEGdf[order(DEGdf$log2FC, decreasing=TRUE),]
+        DEGlist_ordered<-DEGdf_ordered[,3]
+        names(DEGlist_ordered)<-DEGdf_ordered$geneID
+        
+        #Read in desired .gmt file from clusterProfiler
+        gmtfile <- system.file("extdata",gmtFile, package="clusterProfiler")
+        gmt <- read.gmt(gmtfile)
+        
+        gseaResults <- GSEA(DEGlist_ordered, TERM2GENE=gmt, verbose=FALSE, pvalueCutoff = pvalueThresh)
+        
+        print(paste(nrow(gseaResults@result), "significant pathways identified"))
+        return(gseaResults)
+}
+
+#Plot GSEA results in nice bar graph- from clusterprofiler analysis
+PlotGSEABar<-function(GSEAResults, colors, yfontsize, barsize, bardistance){
+                ggplot(GSEAResults, aes(reorder(Description, NES), NES)) +
+                geom_bar(aes(fill=Group),width=barsize, 
+                         position = position_dodge2(width = bardistance, preserve = "single"), 
+                         stat = "identity") +
+                coord_flip() +
+                labs(x="Pathway", y="Normalized Enrichment Score") + 
+                scale_fill_manual(values=colors)+
+                theme_minimal()+
+                theme(axis.title.x = element_text(size=14, color="black", face="bold"),
+                      axis.title.y = element_blank(),
+                      axis.text.x = element_text(size=12, color="black", face="bold"),
+                      axis.text.y = element_text(size=yfontsize, color="black", face="bold"),
+                      legend.title = element_blank(),
+                      legend.text = element_text(size=yfontsize, color="black", face="bold"))
+                
+        }
+
+
+#Run pathway analysis with gsea, plot- no longer in use
+RunPlotGSEA<-function(res, gmt, nPermutations, OnlyPlotSig){
+        #convert to vector
+        ranks <- deframe(res)
+        
+        # Load the pathways into a named list
+        pathways.hallmark <- gmtPathways(paste("C:/Users/Jenna/Documents/UKy_RNASeq/mSigdb/", gmt, sep=""))
+        
+        #run gsea with x permutations
+        fgseaRes <- fgsea(pathways=pathways.hallmark, stats=ranks, nperm=nPermutations)
+        
+        #tidy up results
+        fgseaResTidy <- fgseaRes %>%
+        as_tibble() %>%
+        arrange(desc(NES))
+        
+        #Only plot sig pathways, if desired
+        if (OnlyPlotSig=="TRUE"){
+                fgseaResTidy<-fgseaResTidy[fgseaResTidy$padj<0.05,]
+        } else {
+                fgseaResTidy<-fgseaResTidy
+        }
+                
+        
+        #plot results
+        p<-ggplot(fgseaResTidy, aes(reorder(pathway, NES), NES)) +
+        geom_col(aes(fill=padj<0.05)) +
+        coord_flip() +
+        labs(x="Pathway", y="Normalized Enrichment Score",
+             title=paste("pathways from GSEA:", gmt, "/", nPermutations, " Permutations")) + 
+        theme_minimal()
+        
+        return(list(p,as.data.frame(fgseaResTidy)))
+}
+```
+
+Read in DE results
+```{r}
+wd<-"C:/Users/Jenna/OneDrive/Documents/UKy/FilesInUse/"
+
+tPosSpecific<-read.csv(paste(wd, "DEResults_tPosSpecificSigDEGS.csv", sep=""), row.names = "X")
+tNegSpecific<-read.csv(paste(wd, "DEResults_tNegSpecificSigDEGS.csv", sep=""), row.names = "X")
+CommonDEGs<- read.csv(paste(wd, "DEResults_CommonSigDEGS.csv", sep=""), row.names = "X")
+DGERes_posneg<-read.csv(paste(wd, "DEResults_PosvsNeg_AllGenes.csv",sep=""), row.names = "X")
+res_ControlsvCM<- read.csv(paste(wd, "DEResults_ControlsvsCM_AllGenes.csv", sep=""), row.names = "X")
+```
+
+
+
+#clusterProfiler
+Several databases are available to perform GSEA analysis, including the Hallmark dataset, KEGG database, and GO terms.Here, the KEGG database will be used. The clusterProfiler package is also used to perform this analysis.
+
+
+
+```{r, include=TRUE}
+PathwayOptions<-c("h.all.v7.1.symbols.gmt",
+                  "c2.cp.kegg.v7.1.symbols.gmt",
+                  "c5.all.v7.1.symbols.gmt")
+
+#Run clusterProfiler gsea- using Hallmark, KEGG, and GO databases for tPos specific, tNeg specific, and common DEGs
+set.seed(42)
+#Tpos specific
+        gsea_tPosSpecific_Hallmark<-RunClusterProfilerGSEA(tPosSpecific, PathwayOptions[1], 0.3) #8
+        gsea_tPosSpecific_KEGG<-RunClusterProfilerGSEA(tPosSpecific, PathwayOptions[2], 0.3) #3
+        gsea_tPosSpecific_GO<-RunClusterProfilerGSEA(tPosSpecific, PathwayOptions[3], 0.01) #13
+
+#Tneg specific
+        gsea_tNegSpecific_Hallmark<-RunClusterProfilerGSEA(tNegSpecific, PathwayOptions[1], 0.1) #12
+        gsea_tNegSpecific_KEGG<-RunClusterProfilerGSEA(tNegSpecific, PathwayOptions[2], 0.1) #6
+        gsea_tNegSpecific_GO<-RunClusterProfilerGSEA(tNegSpecific, PathwayOptions[3], 0.001) #57
+        
+#Common DEGs
+        gsea_CommonDEGs_Hallmark<-RunClusterProfilerGSEA(CommonDEGs, PathwayOptions[1], 0.1) #6
+        gsea_CommonDEGs_KEGG<-RunClusterProfilerGSEA(CommonDEGs, PathwayOptions[2], 0.1) #4
+        gsea_CommonDEGs_GO<-RunClusterProfilerGSEA(CommonDEGs, PathwayOptions[3], 0.001) #42
+
+#tPos vs tNeg DE analysis
+        PosvNegDEGs<- DGERes_posneg[DGERes_posneg$padj<0.1,] #Low threshold for more DEGs
+        gsea_PosvNeg_Hallmark<-RunClusterProfilerGSEA(PosvNegDEGs, PathwayOptions[1], 0.5) #7
+        gsea_PosvNeg_KEGG<-RunClusterProfilerGSEA(PosvNegDEGs, PathwayOptions[2], 0.5) #1
+        gsea_PosvNeg_GO<-RunClusterProfilerGSEA(PosvNegDEGs, PathwayOptions[3], 0.3) #13
+
+#Controls vs CM DE analysis
+        ControlsvCMDEGs<-na.omit(res_ControlsvCM[res_ControlsvCM$padj<0.05,])
+        gsea_ControlsvCM_Hallmark<-RunClusterProfilerGSEA(ControlsvCMDEGs, PathwayOptions[1], 0.05) #7
+        gsea_ControlsvCM_KEGG<-RunClusterProfilerGSEA(ControlsvCMDEGs, PathwayOptions[2], 0.05) #7
+        gsea_ControlsvCM_GO<-RunClusterProfilerGSEA(ControlsvCMDEGs, PathwayOptions[3], 0.0001) #80
+```
+
+```{r}
+#Plot Hallmark pathways for tNeg and tPos
+        
+        #Subset results
+        tPos_H<-gsea_tPosSpecific_Hallmark@result[,c(2,5,7)]
+        tNeg_H<-gsea_tNegSpecific_Hallmark@result[,c(2,5,7)]
+        tPosvtNeg_H<-gsea_PosvNeg_Hallmark@result[,c(2,5,7)]
+        Common_H<-gsea_CommonDEGs_Hallmark@result[,c(2,5,7)]
+        ControlsvsCM_H<-gsea_ControlsvCM_Hallmark@result[,c(2,5,7)]
+        
+        #Add column for group, bind together into 1 df
+        tPos_H$Group<-"TTNpos DEGs"
+        tNeg_H$Group<-"TTNneg DEGs"
+        tPosvtNeg_H$Group<- "tPos vs tNeg"
+        Common_H$Group<-"Common DEGs"
+        ControlsvsCM_H$Group<-"CM vs Controls"
+        All_H<-rbind(tPos_H, tNeg_H, Common_H, ControlsvsCM_H, tPosvtNeg_H)
+
+        #plot results
+        gseaColors<- c("steelblue4","grey", "olivedrab", "violetred4", "goldenrod2")
+        p_hallmark<-PlotGSEABar(All_H, gseaColors, 8, 1,8)
+       
+#Plot KEGG pathways for tNeg and tPos
+        
+        #Subset results
+        tPos_K<-gsea_tPosSpecific_KEGG@result[,c(2,5,7)]
+        tNeg_K<-gsea_tNegSpecific_KEGG@result[,c(2,5,7)]
+        tPosvtNeg_K<-gsea_PosvNeg_KEGG@result[,c(2,5,7)]
+        Common_K<-gsea_CommonDEGs_KEGG@result[,c(2,5,7)]
+        ControlsvsCM_K<-gsea_ControlsvCM_KEGG@result[,c(2,5,7)]
+        
+        #Add column for group, bind together into 1 df
+        tPos_K$Group<-"TTNpos DEGs"
+        tNeg_K$Group<-"TTNneg DEGs"
+        tPosvtNeg_K$Group<- "tPos vs tNeg"
+        Common_K$Group<-"Common DEGs"
+        ControlsvsCM_K$Group<-"CM vs Controls"
+        All_K<-rbind(tPos_K, tNeg_K, Common_K, ControlsvsCM_K, tPosvtNeg_K)
+        
+        #plot results
+        p_kegg<-PlotGSEABar(All_K, gseaColors, 12,1,2)
+
+#Plot GO pathways for tNeg and tPos
+        
+        #Subset results
+        tPos_G<-gsea_tPosSpecific_GO@result[order(abs(gsea_tPosSpecific_GO@result$NES), 
+                                                  decreasing = TRUE),c(2,5,7)]
+        tNeg_G<-gsea_tNegSpecific_GO@result[order(abs(gsea_tNegSpecific_GO@result$NES), 
+                                                  decreasing = TRUE),c(2,5,7)]
+        tPosvtNeg_G<-gsea_ControlsvCM_GO@result[order(abs(gsea_tPosSpecific_GO@result$NES),
+                                                      decreasing=TRUE),c(2,5,7)]
+        Common_G<-gsea_CommonDEGs_GO@result[order(abs(gsea_tPosSpecific_GO@result$NES), 
+                                                  decreasing=TRUE),c(2,5,7)]
+        ControlsvsCM_G<-gsea_ControlsvCM_GO@result[order(abs(gsea_tPosSpecific_GO@result$NES),
+                                                         decreasing=TRUE),c(2,5,7)]
+        
+        #Add column for group, bind together into 1 df
+        tPos_G$Group<-"TTNpos DEGs"
+        tNeg_G$Group<-"TTNneg DEGs"
+        tPosvtNeg_G$Group<- "tPos vs tNeg"
+        Common_G$Group<-"Common DEGs"
+        ControlsvsCM_G$Group<-"CM vs Controls"
+        All_G<-rbind(tPos_G[1:8,], tNeg_G[1:8,], Common_G[1:8,], ControlsvsCM_G[1:8,],tPosvtNeg_G[1:8,])
+        
+        #plot results
+        p_go<-PlotGSEABar(All_G, gseaColors, 7,1,2)
+
+```
+
+
+
+```{r}
+common_ccp<-gsea_CommonDEGs_GO@result[gsea_CommonDEGs_GO@result$Description=="GO_CELL_CYCLE_PROCESS",]
+ControlsvCM_ccp<-gsea_ControlsvCM_GO@result[gsea_ControlsvCM_GO@result$Description=="GO_CELL_CYCLE_PROCESS",]
+
+common_genes<-unlist(as.list(strsplit(common_ccp$core_enrichment, '/')[[1]])) #all
+controlsvCM_genes<-unlist(as.list(strsplit(ControlsvCM_ccp$core_enrichment, '/')[[1]])) #41 out of 88
+
+common_counts<-CommonDEGs[rownames(CommonDEGs) %in% common_genes,]
+controlsvCM_counts<-ControlsvCMDEGs[rownames(ControlsvCMDEGs) %in% common_genes,]
+```
+
+
+
+
+
+#Gene concept plotting
+```{r}
+DEGdf_ordered<-tNegSpecific[order(tNegSpecific$log2FoldChange, decreasing=TRUE),]
+DEGlist_ordered<-DEGdf_ordered[,3]
+names(DEGlist_ordered)<-rownames(DEGdf_ordered)
+
+p1 <- cnetplot(gsea_tNegSpecific_Hallmark, foldChange=DEGlist_ordered)
+p2 <- cnetplot(gsea_tNegSpecific_Hallmark, foldChange=DEGlist_ordered, circular = TRUE, colorEdge = TRUE)
+```
+
+#Enrichment plot mapping
+```{r}
+p3 <- emapplot(gsea_tNegSpecific_Hallmark, pie_scale=1.5)
+p4 <- emapplot(gsea_ControlsvCM_GO, pie_scale=1.5,layout="kk")
+p5 <- emapplot(gsea_ControlsvCM_GO, pie_scale=3,layout="nicely") 
+```
+
+No longer in use
+#Pathway analysis using fgsea
+```{r}
+#database options I've downloaded
+PathwayOptions<-c("h.all.v7.1.symbols.gmt",
+                  "c2.cp.kegg.v7.1.symbols.gmt",
+                  "c5.all.v7.1.symbols.gmt")
+
+#Reformat list of DEGs in tPos only: only need gene ID and stat
+tPosPath<- as.data.frame(tPosSpecific[,c(2,4,6)])
+tPosPath$geneID<-rownames(tPosPath)
+tPosPathInput<-tPosPath[,c(4,2)]
+
+#Reformat list of DEGs in tNeg only: only need gene ID and stat
+tNegPath<- as.data.frame(tNegSpecific[,c(2,4,6)])
+tNegPath$geneID<-rownames(tNegPath)
+tNegPathInput<-tNegPath[,c(4,2)]
+
+#Reformat list of DEGs in both tPos and tNeg: only need gene ID and stat
+CommonDEGsPath<- as.data.frame(CommonDEGs[,c(2,4,6)])
+CommonDEGsPath$geneID<-rownames(CommonDEGsPath)
+CommonDEGsPathInput<-CommonDEGsPath[,c(4,2)]
+        
+
+#Running pathway analysis
+gsea<-RunPlotGSEA(CommonDEGsPathInput, PathwayOptions[1], 10000, "TRUE")
+
+#Hallmark database: saving for later
+tNeg_Hallmark<-RunPlotGSEA(tNegPathInput, PathwayOptions[1], 10000, "TRUE")[[2]]
+tPos_Hallmark<-RunPlotGSEA(tPosPathInput, PathwayOptions[1], 100000, "TRUE")[[2]]
+
+#Running for all 4 databases. To combine and export tables.
+CommonDEGs_SigPathways<-lapply(PathwayOptions, function(x){RunPlotGSEA(CommonDEGsPathInput, x, 10000, "TRUE")[[2]]})
+all<-do.call("rbind", CommonDEGs_SigPathways) #110 pathways
+all$leadingEdge<-as.character(all$leadingEdge)
+
+tNeg_SigPathways<-lapply(PathwayOptions, function(x){RunPlotGSEA(tNegPathInput, x, 10000, "TRUE")[[2]]})
+all<-do.call("rbind", tNeg_SigPathways) #517 pathways
+all$leadingEdge<-as.character(all$leadingEdge)
+
+write.csv(all, paste(wd, "DEGsCommonTo_BothtPostNeg_GSEAResults_FourPathwayDatabases_051320.csv",sep=""))
+
+#Plot Hallmark pathways for tNeg and tPos on one plot
+tPos_H<-tPos_Hallmark[,c(1,5,6)]
+tNeg_H<-tNeg_Hallmark[,c(1,5,6)]
+tPos_H$Group<-"tPos"
+tNeg_H$Group<-"tNeg"
+All_H<-rbind(tPos_H, tNeg_H)
+
+#plot results
+p<-ggplot(All_H, aes(reorder(pathway, NES), NES)) +
+        geom_col(aes(fill=Group)) +
+        coord_flip() +
+        labs(x="Pathway", y="Normalized Enrichment Score") + 
+        theme_minimal()
+```
