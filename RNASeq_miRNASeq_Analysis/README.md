@@ -16,9 +16,8 @@ Individual count matrices across 3 different sequence runs merged and preprocess
 ![RNASeqApproach](RNASeq_DEMethod.PNG)
 
 ## miRNASeq Analysis approach:
-**Goal:** Identify potential miRNA biomarkers of DCM. In addition, identify miRNAs with high disease association by comparing differentially expressed miRNAs to their differentially expressed mRNA targets. Determine what pathways the targets of this subset of miRNAs act in.
+**Goal:** Perform DE analysis of miRNAs to identify DE miRs and potential miRNA biomarkers of DCM- `miRNA_DEAnalysis.Rmd`. In addition, identify miRNAs with high disease association by comparing differentially expressed miRNAs to their differentially expressed mRNA targets- `Integrating_RNASeq_and_miRNASeq_DE_Results.Rmd`. Determine what pathways the targets of this subset of miRNAs act in- `Integrating_RNASeq_and_miRNASeq_DE_Results.Rmd`
 
-miRNA and mRNA DE results integrated in `Integrating_RNASeq_and_miRNASeq_DE_Results.Rmd`
 
 **Graphical summary of approach:**
 
