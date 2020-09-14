@@ -2,6 +2,15 @@
 title: "R Notebook"
 output: html_notebook
 ---
+#DE analysis of mRNA data
+
+4 DE analyses performed:
+
+1. Controls vs all CM
+2. Controls vs TTN+
+3. Controls vs TTN-
+4. TTN+ vs TTN-
+
 
 Import libraries:
 ```{r}
@@ -17,8 +26,6 @@ suppressPackageStartupMessages(library(tibble))
 suppressPackageStartupMessages(library(fgsea))
 suppressPackageStartupMessages(library(dplyr))
 ```
-
-
 
 
 Functions
@@ -121,9 +128,6 @@ GetSigDEGs<- function(DEGs, sigThresh, BasemeanThresh, Log2FCThresh){
 
 
 
-
-
-
 Read in counts data (generated in"UKy_MergingRNACountsFilesAcross3Runs.R"), format, filter out very low counts nd "no_feature", and perform downsampling
 ```{r}
 #Set wd
@@ -135,6 +139,7 @@ countsInput<- read.csv(paste(readwd, "RawCounts_Run1S10.14_Run2Controls_AllOther
 countsInput<-countsInput[,c(2:10, 19, 11:13,20,14:18, 21:25)]
 ```
 
+Remove unused samples, no_feature, na, and downsample
 ```{r}
 #remove sample 10 and 14- too low of counts- and sample 4- technical replicate of sample 2
 counts<- countsInput[,!(colnames(countsInput)%in% c("X10", "X14", "X4"))]
@@ -402,11 +407,5 @@ write.csv(resOrdered_ControlsvCM, paste(wd, "DEResults_ControlsvsCM_AllGenes.csv
 ```{r}
 sessionInfo()
 ```
-
-
-
-
-
-
 
 
