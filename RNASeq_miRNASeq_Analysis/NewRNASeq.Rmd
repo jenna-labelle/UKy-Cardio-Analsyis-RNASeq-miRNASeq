@@ -1,0 +1,412 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Import libraries:
+```{r}
+suppressPackageStartupMessages(library(DESeq2))
+suppressPackageStartupMessages(library(viridis))
+suppressPackageStartupMessages(library(RColorBrewer))
+suppressPackageStartupMessages(library(pheatmap))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(metaseqR))
+suppressPackageStartupMessages(library(ggVennDiagram))
+suppressPackageStartupMessages(library(DT))
+suppressPackageStartupMessages(library(tibble))
+suppressPackageStartupMessages(library(fgsea))
+suppressPackageStartupMessages(library(dplyr))
+```
+
+
+
+
+Functions
+```{r}
+#Create DESeq2 object, check that metadata is correct, and run DESeq2
+RunDESeq2<- function(counts, meta){
+  #check that counts/meta data has samples in same order
+  print(all(rownames(meta) %in% colnames(counts)))
+  print(all(rownames(meta) == colnames(counts)))
+  
+  #create DESeq2 object
+  dds<- DESeqDataSetFromMatrix(countData=counts, 
+                               colData=meta, 
+                               design=~Sex + sampleGroup)
+  
+  #define levels- so that controls will always be used as reference group
+  dds$sampleGroup<- relevel(dds$sampleGroup, ref= "Control")
+  
+  #run DE
+  dds<- DESeq(dds)
+  
+  return(dds)
+
+}
+
+
+#Plot PCA nicely
+MyPCA<- function(dds, metadata, PC1Variance, PC2Variance, Groupcolors,miny, maxy, minx, maxx, pointSize, intgroup) {
+  #Normalized (variance stabilized transformation), then run PCA
+  vsd <- varianceStabilizingTransformation(dds, blind=TRUE)
+  PCA<-plotPCA(vsd, intgroup=intgroup,returnData=TRUE)
+  
+  #plot
+  p<- ggplot(PCA, aes(x=PC1, y=PC2, color=group))+
+  geom_point(size=pointSize)+
+  scale_color_manual(values=Groupcolors)+
+  theme_classic()+
+  ylim(miny,maxy)+
+  xlim(minx,maxx)+
+  ylab(paste("PC2: ", PC2Variance, "% Variance", sep =""))+
+  xlab(paste("PC1: ", PC1Variance, "% Variance", sep =""))+
+  theme(axis.text.y   = element_text(size=15, colour = "black", face="bold"),
+        axis.title.y  = element_text(size=18, colour = "black", face="bold"),
+        axis.title.x  = element_text(size=18, colour = "black", face="bold"),
+        axis.text.x  = element_text(size=15, colour = "black", face="bold"),
+        legend.background = element_rect(fill=NA, size=1, 
+                                         linetype="solid", color="black"),
+        legend.title=element_blank(),
+        legend.text = element_text(size=18, face="bold"),
+        legend.key.size = unit(.4, "cm"),
+        legend.spacing.y = unit(0, "mm"),
+        legend.position = c(.85,.9),
+        panel.border = element_rect(colour = "black", fill=NA, size=2)
+        )
+  return(p)
+}
+
+#Plot heatmap: takes as input DE results (padj ordered lowest to highest, rlog transformed data, metadata (blocker status and Sample type), top genes to include, and min and max subtract (used for heatmap aesthetics))
+PlotHeatmap<- function(rld, metadata, topgenes, 
+                       MinSubtract, MaxSubtract, fontsize, annotationColors){
+  mat<- assay(rld)[topgenes,]
+  mat<- mat - rowMeans(mat)
+  colnames(mat)<-metadata$Sample
+  
+  #Heatmap settings
+  mat_breaks<- seq(min(mat-MinSubtract), max(mat-MaxSubtract), length.out=75)
+
+  #Create metadata- to be used to color code to show which group the sample belongs to
+  metadata<- data.frame(Group=metadata$sampleGroup, 
+                        row.names=metadata$Sample)
+
+  #plot heatmap
+  p<-pheatmap(mat, breaks = mat_breaks, 
+            color =colorRampPalette( c("red", "black", "green"), space="rgb")(100),
+            show_rownames = TRUE, show_colnames=TRUE,
+            annotation = metadata,
+            annotation_colors= annotationColors,
+            fontsize_row = fontsize,fontsize=12,treeheight_row=0,
+            border_color= NA,
+            clustering_distance_cols = "euclidean")
+  return(p)
+}
+
+#function that takes dds object and desired contrasts as input, outputs ordered results
+ContrastDGE<- function(contrasts, dds){
+  ContrastsUse<- c("sampleGroup", contrasts)
+  ContrastsResults<- na.omit(results(dds, contrast=ContrastsUse))
+  resOrdered<- ContrastsResults[order(ContrastsResults$padj),]
+  return(resOrdered)
+}
+
+#Get sig DEGs based on 3 filters. Prints out # of DEGs fitting that criteria
+GetSigDEGs<- function(DEGs, sigThresh, BasemeanThresh, Log2FCThresh){
+        df<-DEGs[DEGs$padj<sigThresh & DEGs$baseMean>BasemeanThresh & abs(DEGs$log2FoldChange) > Log2FCThresh,]
+        print(nrow(df))
+        return(df)
+}
+
+```
+
+
+
+
+
+
+Read in counts data (generated in"UKy_MergingRNACountsFilesAcross3Runs.R"), format, filter out very low counts nd "no_feature", and perform downsampling
+```{r}
+#Set wd
+readwd<-"C:/Users/Jenna/OneDrive/Documents/UKy_RNASeq/RawCounts/"
+
+#read in count data, reformat
+countsInput<- read.csv(paste(readwd, "RawCounts_Run1S10.14_Run2Controls_AllOthersMerged.csv", sep =""), row.names="GeneID")
+
+countsInput<-countsInput[,c(2:10, 19, 11:13,20,14:18, 21:25)]
+```
+
+```{r}
+#remove sample 10 and 14- too low of counts- and sample 4- technical replicate of sample 2
+counts<- countsInput[,!(colnames(countsInput)%in% c("X10", "X14", "X4"))]
+
+#Remove highest expressed "gene" - no_feature. Could throw off DE
+counts<-counts[!(rownames(counts) %in% "no_feature"),]
+
+#Get rid of any genes with NA values, or where counts are 0 for that gene across all samples
+counts<- na.omit(counts) #no NA values
+counts<- counts[rowSums(counts)>0,] 
+
+#downsample: set seed so results are replicable
+counts<- downsample.counts(counts, seed=42) 
+```
+
+```{r}
+detach("package:metaseqR")
+detach("package:DESeq")
+```
+
+
+Read in metadata, reformat
+```{r}
+#Read in metadata info
+wd<- "C:/Users/Jenna/Documents/UKy_RNASeq/"
+meta<- read.csv(paste(wd, "MetaData_AllSamples.csv",sep=""))
+rownames(meta)<- meta$Sample
+meta<- meta[,-1]
+meta<- meta[!(rownames(meta) %in% c(paste("X", c(10,14,4), sep=""))),] 
+```
+
+
+Run DESeq2, comparing Controls vs all CM. Plot PCA
+```{r}
+#Convert metadata to CM or Controls
+meta_ControlsvCM<-meta
+meta_ControlsvCM$sampleGroup<-gsub("TTNpos", "CM", meta_ControlsvCM$sampleGroup)
+meta_ControlsvCM$sampleGroup<-gsub("TTNneg", "CM", meta_ControlsvCM$sampleGroup)
+
+#RunDESeq2
+dds_ControlsvCM<- RunDESeq2(counts, meta_ControlsvCM)
+
+#Extract results
+res_ControlsvCM<-as.data.frame(results(dds_ControlsvCM))
+
+#Order results by pvalue
+resOrdered_ControlsvCM<- res_ControlsvCM[order(res_ControlsvCM$padj),]
+
+#Plot PCA- sampleGroup
+MyPCA(dds_ControlsvCM, meta_ControlsvCM, 27,15, c("steelblue4","olivedrab"), -20,25,-30,20,5, "sampleGroup")
+
+#Plot PCA- Sex
+MyPCA(dds_ControlsvCM, meta_ControlsvCM, 27,15, c("violetred3","steelblue3"), -20,25,-30,20,5, "Sex")
+
+#Plot PCA- Sex
+MyPCA(dds_ControlsvCM, meta_ControlsvCM, 27,15, c("steelblue4","olivedrab"), -20,25,-30,20,5, "demo_race")
+```
+
+Plot heatmap for Controls vs CM analysis
+```{r}
+rld_ControlsVsCM<- rlog(dds_ControlsvCM)
+
+#Select top sig DE mRNAs
+topgenes<- rownames(resOrdered_ControlsvCM[1:80,])
+
+#Coloring based on Controls/CM
+annotationColors<-list(Group=c(Control="steelblue4", CM="olivedrab"))
+
+PlotHeatmap(rld_ControlsVsCM,
+            meta_ControlsvCM,
+            topgenes,-.5,2.5,8,
+            annotationColors)
+
+
+#Coloring based on TTN+/TTN-
+annotationColors<-list(Group=c(Control="steelblue4", TTNpos="goldenrod2", TTNneg="violetred4"))
+
+PlotHeatmap(rld_ControlsVsCM,
+            meta,
+            topgenes,-.5,2.5,8,
+            annotationColors)
+```
+
+
+#Run DESeq2 on downsampled counts, comparing TTN+/TTN-
+```{r}
+#DESeq2 on downsampled counts- pos vs neg vs controls
+dds<- RunDESeq2(counts,meta)
+```
+
+Run and plot PCA for raw and DS counts
+```{r}
+MyPCA(dds, meta, 27,15, c("steelblue4","goldenrod2", "violetred4"), -20,25,-30,20,5, "sampleGroup")
+```
+```{r}
+#Adjust metadata- move sample 3 back to TTN- group, plot by PCA
+meta_sample3<-meta
+meta_sample3[3,2]<- "TTNneg"
+
+#DESeq2 on downsampled counts- pos vs neg vs controls
+dds_sample3<- RunDESeq2(counts,meta_sample3)
+
+MyPCA(dds_sample3, meta_sample3, 27,15, c("steelblue4","goldenrod2", "violetred4"), -20,25,-30,20,5, "sampleGroup")
+```
+
+
+```{r}
+#Extract comparisons for 3 desired groups
+DGERes_controlpos<- ContrastDGE(c("TTNpos","Control"), dds)
+DGERes_controlneg<- ContrastDGE(c("TTNneg","Control"), dds)
+DGERes_posneg<- ContrastDGE(c("TTNpos","TTNneg"), dds)
+
+nrow(DGERes_controlpos[DGERes_controlpos$padj<0.05,])
+nrow(DGERes_controlneg[DGERes_controlneg$padj<0.05,])
+nrow(DGERes_posneg[DGERes_posneg$padj<0.05,])
+```
+
+#Plot heatmap
+```{r}
+#Normalize
+rld<- rlog(dds)
+
+#select top DE genes for control vs pos, control vs neg, and pos vs neg
+topn<- 25
+topgenes<- unique(c(rownames(DGERes_controlneg[1:topn,]), 
+                    rownames(DGERes_controlpos[1:topn,]), 
+                    rownames(DGERes_posneg[1:topn,])))
+
+
+#Set annotation colors to use
+annotationColors<-list(Group=c(Control="steelblue4", TTNpos="goldenrod2", TTNneg="violetred4"))
+
+PlotHeatmap(rld,meta,topgenes,-.2,2.5,8, annotationColors)
+```
+
+
+#Performing random sample permutation to show (hopefully) that our groups give the highest number of DEGs
+```{r}
+AllN_DEGs<-list()
+count=1
+while (count<=20){
+        #Randomly assign each sample to "pos" or "neg"
+        CMSamples<-meta[meta$sampleGroup!="control",]
+        CMSamples_Random<- CMSamples
+        CMSamples_Random$sampleGroup<-sample(CMSamples$sampleGroup)
+        
+        #merge back with control samples
+        meta_random<- rbind(CMSamples_Random, meta[meta$sampleGroup=="control",])
+        
+        #Perform DE using this new metadata
+        dds_random<- RunDESeq2(counts,meta_random)
+        
+        #Extract comparisons for pos vs neg
+        DEGs<-ContrastDGE(c("pos", "neg"), dds_random)
+        SigDEGs<- DEGs[DEGs$padj<0.05,]
+        AllN_DEGs[count]<-nrow(SigDEGs)
+        
+        print(count)
+        count=count+1
+}
+
+
+```
+
+
+#Get DEGs specific to + and -, and DEGs common to +/-
+```{r}
+#Get sig DEGs- 3 potential thresholds
+sigThres<-0.05
+BasemeanThresh<-0
+Log2FCThresh<-0.0
+
+tPosDEGs<- GetSigDEGs(DGERes_controlpos, sigThres, BasemeanThresh, Log2FCThresh) 
+tNegDEGs<- GetSigDEGs(DGERes_controlneg, sigThres, BasemeanThresh, Log2FCThresh)
+
+#Get DEGs specific to tPos or tNeg, or common to tPos/tNeg
+tPosSpecific<-tPosDEGs[!(rownames(tPosDEGs) %in% rownames(tNegDEGs)),] 
+nrow(tPosSpecific) #461
+
+tNegSpecific<-tNegDEGs[!(rownames(tNegDEGs) %in% rownames(tPosDEGs)),] #2,361 (p<0.05) / 1,668 (p<0.01)
+nrow(tNegSpecific) #2338
+
+CommonDEGs<-tPosDEGs[rownames(tPosDEGs) %in% rownames(tNegDEGs),]
+nrow(CommonDEGs) #2,303
+
+venn<-list(TTNpos=rownames(tPosDEGs), TTNneg=rownames(tNegDEGs))
+ggVennDiagram(venn, label="both",color="black",size=2)+scale_fill_gradient(low="gray90",high = "gray34")
+```
+
+For p<0.05 thresh: #samples in tPos/tNeg is split ~60/40. But the # of unique DEGs is split ~80/20. That is- we see a lot fewer tPos specific DEGs than we might expect, if the groups were totally comparable. Maybe suggests that the tPos are more similar to one another than the tNeg. Also can see this in the shear number of DEGs found in tPos/tNeg.
+
+#Plotting heatmap of tPos and tNeg specific DEGs only
+no longer in use
+```{r}
+#Select just top DEGs
+Topn<-2000
+topgenes<- unique(c(rownames(tPosSpecific[1:topn,]), rownames(tNegSpecific[1:topn,])))
+#topgenes<-unique(rownames(tPosSpecific), rownames(tNegSpecific)) #Option to plot all
+
+#normalize rld counts based on rowMeans
+mat<- assay(rld)[topgenes,]
+mat<- mat - rowMeans(mat)
+
+#settings for heatmap
+subtractFromMin<- -.7
+subtractFromMax<- 1.8
+lengthOut<- 100
+mat_breaks<- seq(min(mat-subtractFromMin), max(mat-subtractFromMax), length.out=lengthOut)
+
+#Create metadata- to be used to color code to show which group the sample belongs to
+metadata<- as.data.frame(meta[,2])
+rownames(metadata)<-rownames(meta)
+colnames(metadata)<-"sampleGroup"
+
+#plot heatmap
+pheatmap(mat, breaks = mat_breaks, color =inferno(length(mat_breaks-1)), show_rownames = FALSE, annotation_col = metadata, border_color=NA)
+```
+
+
+#For DEgs found in both tPos and tNeg- look at pattern of expression. Expect it to be very similar.
+```{r}
+#Separate counts for tPos and tNeg samples
+tPosCounts<- as.data.frame(rowMeans(counts[,colnames(counts) %in% as.character(meta[meta$sampleGroup=="TTNpos",1])]))
+tNegCounts<- as.data.frame(rowMeans(counts[,colnames(counts) %in% as.character(meta[meta$sampleGroup=="TTNneg",1])]))
+
+#Merge counts into 1 df- for each DEG in both, mean raw counts for tPos and tNeg
+CommonDEGs_counts<-merge(as.data.frame(CommonDEGs), tPosCounts, by=0)[,c(1,8)]
+rownames(CommonDEGs_counts)<-CommonDEGs_counts$Row.names
+CommonDEGs_counts<- merge(CommonDEGs_counts, tNegCounts, by=0)[,2:4]
+colnames(CommonDEGs_counts)<-c("CommonDEGs", "Mean_tPos", "Mean_tNeg")
+rownames(CommonDEGs_counts)<-CommonDEGs_counts$CommonDEGs
+CommonDEGs_counts<- CommonDEGs_counts[,-1]
+
+#Optional: transformation
+CommonDEGs_log2<- log2(CommonDEGs_counts+0.1)
+CommonDEGs_CPM<- (CommonDEGs_counts/colSums(counts)) * 1000000
+CommonDEGs_CPM_log2<- log2(CommonDEGs_CPM+0.1)
+
+df<-CommonDEGs_CPM_log2
+
+p<-ggplot(df, aes(x=Mean_tPos, y=Mean_tNeg))+
+        geom_point() +
+        theme_classic()+
+        xlab("Mean Log2(CPM) of Common DEGs: TTNpos samples")+
+        ylab("Mean Log2(CPM) of Common DEGs: TTNneg samples")+
+        geom_abline(slope=1, intercept = 0, color="red", size=1)+
+        theme(axis.title.x = element_text(size=15, face="bold", color="black"),
+              axis.title.y = element_text(size=15, face="bold", color="black"),
+              axis.text.x = element_text(size=12, face="bold", color="black"),
+              axis.text.y = element_text(size=12, face="bold", color="black"))
+```
+
+Export all DE Results
+```{r}
+wd<-"C:/Users/Jenna/OneDrive/Documents/UKy/FilesInUse/"
+
+write.csv(tPosSpecific, paste(wd, "DEResults_tPosSpecificSigDEGS.csv", sep=""))
+write.csv(tNegSpecific, paste(wd, "DEResults_tNegSpecificSigDEGS.csv", sep=""))
+write.csv(CommonDEGs, paste(wd, "DEResults_CommonSigDEGS.csv", sep=""))
+write.csv(DGERes_posneg, paste(wd, "DEResults_PosvsNeg_AllGenes.csv",sep=""))
+write.csv(resOrdered_ControlsvCM, paste(wd, "DEResults_ControlsvsCM_AllGenes.csv", sep=""))
+
+```
+
+```{r}
+sessionInfo()
+```
+
+
+
+
+
+
+
+
