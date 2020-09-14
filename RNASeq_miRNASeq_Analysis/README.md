@@ -4,7 +4,7 @@
 **Goal:** determine differentially expressed genes between CM/controls, but more imporantly: between Controls, CM samples with TTN variants, and CM samples with no TTN variants. 
 Essentially, trying to **stratify CM samples into two groups, with two potential mechanisms of action**: TTN+ and TTN-
 
-
+Individual count matrices across 3 different sequence runs merged and preprocessed in `UKy_MergingRNACountsFilesAcross3Runs.Rmd`
 
 **Steps:**
 1. RNASeq DE (DESeq2 used throughout): comparing CM to controls. This analysis has been performed by many other groups, including here for comparison purposes. ***`RNASeq_DESeq2.Rmd`***
