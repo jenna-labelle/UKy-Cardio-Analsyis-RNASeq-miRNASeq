@@ -1,6 +1,6 @@
 # Idenfication of potentially pathogenic splice sites
 
-Here, all junctions within CM samples are filtered to identify abberant splice sites that may be pathogenic. Junctions are confirmed in IGV; a large proportion of junctions identified in this analysis **show clear abberant splicing in IGV.** Additionally, the splice variants that appear to cause the aberrant junctions were previously and independently identified as **potentially pathogenic in WES data** for at least 3 samples. This analysis provides a **functional explanation** for how these variants may cause NMD or LOF.
+Here, all junctions within CM samples are filtered to identify abberant splice sites that may be pathogenic. Junctions should be confirmed manually in IGV. For at least 3 aberrant junctions in CM samples, the splice variants that appear to cause the aberrant junctions were previously and independently identified as **potentially pathogenic in WES data**. This analysis provides a potential **functional explanation** for how these variants may cause NMD or LOF.
 
 <br/>
 
@@ -11,11 +11,11 @@ Here, all junctions within CM samples are filtered to identify abberant splice s
 
 These .csv files should be optionally filtered to only include junctions in genes of interest (here, genes found to be involved in CM)
 
-## Two databases based on **junctions found in control samples** are used when filtering CM junctions:
+## Two tables based on **junctions found in control samples** are used when filtering CM junctions:
 
 1) List of ***Control Junctions***: built from *junctions* found in control samples. Composed of **junctions that appear in at least 2 control samples with at least 5 reads**. These thresholds are somewhat arbitrary and can be adjusted within the function.
 2) List of ***Canonical splice sites***: A canonical splice site is defined as a *splice site* occuring in **all 5 control samples with at least 80% of mean depth for that gene for that sample**. The 80% threshold is somewhat arbitrary and can be adjusted within the function.  
-*Example: Junction chr1_100-200 is split into SpliceSiteA_chr1_100. This splice site is found in all 5 controls. In Control 1, its depth is 10 and the mean depth for all junctions in that gene is 15 (>50% depth, passes for Control 1). The same is true for Controls 2-5. SpliceSiteA_chr1_100, therefore, **is considered "canonical"** and is added to the list of Canonical splice sites*
+*Example: Junction chr1_100-200 is split into SpliceSiteA_chr1_100. This splice site is found in all 5 controls. In Control 1, its depth is 10 and the mean depth for all junctions in that gene is 12 (>80% depth, passes for Control 1). The same is true for Controls 2-5. SpliceSiteA_chr1_100, therefore, **is considered "canonical"** and is added to the list of Canonical splice sites*
 <br/>
 
 ## Filtering of junctions is performed with 4 filters- 
@@ -47,14 +47,11 @@ While junctions are not filtered based on Norm Score, junctions with a score of 
 
 <br/>
 
-## For our analysis, filters 1b (set at 10%) and 2-4 were used. The complete analysis, including creation of Control sample junction/splice site databases, can be found in `AbberantSplicing_Analysis.Rmd`
+## For our analysis, filters 1b (set at 10%) and 2-4 were used. The complete analysis, including creation of Control sample junction/splice site tables, can be found in `AbberantSplicing_Analysis.Rmd`
 
 <br/>
 
 **Graphical summary of junction filtration approach:**
 ![JunctionApproach](JunctionMethod.PNG)
 
-## The resulting list of abberant splice sites is combined with allelic imbalance information *(see "VariantCalling")* to split abberant splice sites into **two potential biologically distinct groups:**
 
-1) Abberant sites resulting in nonsense mediated decay (NMD)- *if gene shows allelic imbalance*
-2) Abberant sites that do not result in NMD, but instead may result in an abnormal protein product - *if gene does not show allelic imbalance*
