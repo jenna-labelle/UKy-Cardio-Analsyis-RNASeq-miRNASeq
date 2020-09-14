@@ -3,6 +3,10 @@ title: "R Notebook"
 output: html_notebook
 ---
 
+#Allele imbalance analysis- MBASED beta-binomial testing  
+
+Using allele counts from ASEReadCounter as input
+
 Import libraries
 ```{r}
 library(MBASED)
@@ -244,7 +248,7 @@ allResults<-allResults[,!(colnames(allResults)=="gene")]
 
 #Multiple testing correction
 ```{r}
-
+#Options for MTC
 MTC<-c("bonferroni", "hochberg", "fdr")
 adjusted<-apply(allResults,2,function(x){
         as.data.frame(p.adjust(na.omit(x), method=MTC[1], n=length(na.omit(x))))
@@ -266,7 +270,6 @@ rownames(adjusted_allResults)<-adjusted_allResults$gene
 adjusted_allResults<-adjusted_allResults[,!(colnames(adjusted_allResults)=="gene")]
 
 
-adjusted_allResults[rownames(adjusted_allResults)=="7273",]
 ```
 
 #Only keep genes that have sig AI (<0.01) in a CM sample and NO CONTROLS have sig AI (<0.01)
@@ -299,6 +302,8 @@ adjusted_allResults[rownames(adjusted_allResults)=="7273",]
         #Subset all samples by controls- only keep if all controls are below sig thresh
         adjusted_NotSiginControls<-SigCM_allResults[rowSums(controls_NAReplace)==0,]
 
+
+#Write to csv
 wd<-"C:/Users/Jenna/Documents/UKy_RNASeq/"
 write.csv(adjusted_NotSiginControls, paste(wd, "MBASEDResults_15X2X_Exome_10Percent_Bonf_SiginCMNotInControls.csv",sep=""))
 ```
@@ -330,6 +335,7 @@ sigAI<-apply(AI, 1,function(x){
 })
 genes<-names(sigAI)
 
+#Add unique ID- Gene with AI + Sample
 sigAI_UniqueID<-list()
 count=1
 for (i in 1:length(genes)){
