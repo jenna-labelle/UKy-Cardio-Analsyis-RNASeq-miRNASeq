@@ -3,6 +3,8 @@ title: "R Notebook"
 output: html_notebook
 ---
 
+Three RNASeq runs performed. Files need to be merged across these runs into a single count matrix for downstream analysis.
+
 #Import raw counts for individual samples (difference sources, described below) and merge into one dataset
 ```{r}
 #Three types of data: 
