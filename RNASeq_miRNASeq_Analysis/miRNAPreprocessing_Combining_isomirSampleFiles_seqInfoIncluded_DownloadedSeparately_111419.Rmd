@@ -3,7 +3,7 @@ title: "R Notebook"
 output: html_notebook
 ---
 
-This file takes as input individually downloaded blocker pilot isomir hits (downloaded separately for each sample) and combines them into one file.
+This file takes as input individually downloaded blocker pilot isomir hits (downloaded separately for each sample) and combines them into one file. A similar method should be applied for combining mature files (but is not included here).
 
 Sequence information is retained in this file.
 
