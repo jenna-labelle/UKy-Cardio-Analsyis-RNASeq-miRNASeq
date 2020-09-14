@@ -2,6 +2,9 @@
 title: "R Notebook"
 output: html_notebook
 ---
+#Allele imbalance analysis- using dunn post hoc to compare medians  
+
+Using allele counts from ASEReadCounter as input
 
 Import libraries
 ```{r}
@@ -19,20 +22,7 @@ suppressPackageStartupMessages(library(PMCMR))
 
 Functions
 ```{r}
-#Summarize results from mbased
-summarizeASEResults_1s <- function(MBASEDOutput) {
-  geneOutputDF <- data.frame(majorAlleleFrequency=assays(MBASEDOutput)$majorAlleleFrequency[,1],
-                             pValueASE=assays(MBASEDOutput)$pValueASE[,1],
-                             pValueHeterogeneity=assays(MBASEDOutput)$pValueHeterogeneity[,1])
-  lociOutputGR <- rowRanges(metadata(MBASEDOutput)$locusSpecificResults)
-  lociOutputGR$allele1IsMajor <- assays(metadata(MBASEDOutput)$locusSpecificResults)$allele1IsMajor[,1]
-  lociOutputGR$MAF <- assays(metadata(MBASEDOutput)$locusSpecificResults)$MAF[,1]
-  lociOutputList <- split(lociOutputGR, factor(lociOutputGR$aseID, levels=unique(lociOutputGR$aseID)))
-  return(list(geneOutput=geneOutputDF,
-              locusOutput=lociOutputList))
-}
-
-#read in VCF, reformat and calculate allelic expression values (AE values not used here)
+#read in allele counts, reformat and calculate allelic expression values (AE values not used here)
 AllelicExpressionFromASEReadCounter<- function(File,  genes, TotalCoverage, RefCoverage, AltCoverage, NVariantsPerGene){
   #read in data, rename and remove unneeded columns
   vcf<- read.table(File)
@@ -85,57 +75,6 @@ GetMaxofWeirdList<- function(WeirdList){
   return(max(as.integer(unlist(strsplit(as.character(WeirdList), ",")))))
 }
 
-#Reformat, convert to summarized experiment (required for MBASED)
-ConvertToSE_MBASEDInput<- function(SNVs){
-  #subset and rename
-  SNVs<-SNVs[,colnames(SNVs) %in% c("seqnames", "start", "end", "Ref", "Alt", "RefDepth", "AltDepth", "geneid")]
-  colnames(SNVs)<-c("seqnames", "start", "end", "Ref", "Alt", "allele1", "allele2", "aseID")
-  
-  #Add unique column for each snp- geneid_Number
-  SNVs<-SNVs %>% group_by(aseID) %>% mutate(ID=paste(aseID, 1:n(),sep="_")) %>% as.data.frame
-  
-  #Convert to granges
-  SNVs_gr<- makeGRangesFromDataFrame(SNVs, keep.extra.columns = TRUE)
-  names(SNVs_gr)<-SNVs_gr$ID
-  
-  #Create summarized experiment with info on allelic depth
-  se<-SummarizedExperiment(
-    assays=list(
-      lociAllele1Counts=matrix(
-        SNVs_gr$allele1,
-        ncol=1,
-        dimnames=list(names(SNVs_gr),'mySample')),
-      lociAllele2Counts=matrix(
-        SNVs_gr$allele2,
-        ncol=1,
-        dimnames=list(names(SNVs_gr), "mySample"))),
-    rowRanges=SNVs_gr
-      )
-  
-  return(se)
-
-}
-
-#run MBASES, extract and summarize results
-GetMBASEDResults<- function(se, numsim){
- #run MBASED
-  ASEresults <- runMBASED(
-  ASESummarizedExperiment=se,
-  isPhased=TRUE,
-  numSim=numsim,
-  BPPARAM = SerialParam()
- )
-  
-  ##Get results
-  results<-as.data.frame(assays(ASEresults)$pValueASE)
-  results$gene<-rownames(results)
-  sig_results<-results[results$mySample<0.05,]
-
-  print(paste("Sig genes:", nrow(sig_results)))
-  return(sig_results)
-
-}
-
 #Recalculate allelic expression after performing other filtering
 NVariantsFilter_AllelicExpresion<- function(df, NVariantsPerGene){
   #subset by genes with at least n variants
@@ -162,7 +101,7 @@ files=c("1", "2", "3", "4", "5", "6", "7", "8", "9", "11", "12", "13", "15", "16
         paste("Control", 1:4,sep=""))
 
 #File paths to ASEReadCounter output files (already filtered by GOI)
-wd<-"D:/UKy/PostWASP_AlleleCounts/"
+wd<-"E:/UKy/PostWASP_AlleleCounts/"
 filepaths=paste(wd, "GOIIntersect_Reformated_ASECounts_", files, ".txt", sep="")
 
 #read in filepaths, calculate allelic depth + add geneID info + coverage filters  
@@ -187,7 +126,7 @@ nvariantsPerGene<- 3
 #Some preliminary filtering included here: 2x Ref and Alt coverage + >= 40 qual score
 
 #Read in for exome vcf data- CM genes
-wd<-"D:/UKy/Exome_Vcf/CMGenesROI_AllelicDepth/" #Set working directory
+wd<-"E:/UKy/Exome_Vcf/CMGenesROI_AllelicDepth/" #Set working directory
 Samples<- c(1:3,5:19) #Samples to be read in
 Files<- paste(wd, "AllelicDepth_GOIFilteredvcf_HeaderRemoved_Tube-", Samples, "-clean.snp.txt",sep="") #set file names
 CM_AllAllelicExpression_Exome<-lapply(Files, read.table)
@@ -391,5 +330,9 @@ akaptested<- Sig_AndAllelicExpressionMetrics_id[Sig_AndAllelicExpressionMetrics_
 print(paste("Number of sample with TTN tested for AI:", nrow(ttnTested[ttnTested$Sample,])))
 ttnTested
 
+```
+
+```{r}
+sessionInfo()
 ```
 
