@@ -5,10 +5,11 @@
 Essentially, trying to **stratify CM samples into two groups, with two potential mechanisms of action**: TTN+ and TTN-
 
 
+
 **Steps:**
-1. RNASeq DE (DESeq2 used throughout): comparing CM to controls. This analysis has been performed by many other groups, including here for comparison purposes.
-2. RNASeq DE: TTN+ vs TTN- vs Controls
-3. Overlap analysis of #2: how many DEGs are found in just TTN+? Just TTN-? Shared between the two?
+1. RNASeq DE (DESeq2 used throughout): comparing CM to controls. This analysis has been performed by many other groups, including here for comparison purposes. ***`RNASeq_DESeq2.Rmd`***
+2. RNASeq DE: TTN+ vs TTN- vs Controls ***`RNASeq_DESeq2.Rmd`***
+3. Overlap analysis of #2: how many DEGs are found in just TTN+? Just TTN-? Shared between the two? ***`RNASeq_DESeq2.Rmd`***
 4. Pathway analysis: do the TTN+/TTN- specific DEGs act through different pathways? How does this compare to the common CM pathways (from #1 DEGs)
 
 **Graphical summary of approach (steps 2-4):**
