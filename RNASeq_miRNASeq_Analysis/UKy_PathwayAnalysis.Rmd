@@ -2,12 +2,19 @@
 title: "R Notebook"
 output: html_notebook
 ---
+#Perform GSEA pathway analysis on mRNA DE analysis results
 
+Two potential packages/methods considered:
+1. clusterProfiler
+2. fgsea
+
+Both use GSEA algorithm. Main difference is that clusterProfiler allows for more extensive visualization. 
 
 Libraries
 ```{r}
 suppressPackageStartupMessages(library(clusterProfiler))
 suppressPackageStartupMessages(library(fgsea))
+suppressPackageStartupMessages(library(ggplot2))
 ```
 
 Functions
@@ -104,9 +111,8 @@ res_ControlsvCM<- read.csv(paste(wd, "DEResults_ControlsvsCM_AllGenes.csv", sep=
 
 
 #clusterProfiler
+
 Several databases are available to perform GSEA analysis, including the Hallmark dataset, KEGG database, and GO terms.Here, the KEGG database will be used. The clusterProfiler package is also used to perform this analysis.
-
-
 
 ```{r, include=TRUE}
 PathwayOptions<-c("h.all.v7.1.symbols.gmt",
@@ -143,6 +149,8 @@ set.seed(42)
         gsea_ControlsvCM_GO<-RunClusterProfilerGSEA(ControlsvCMDEGs, PathwayOptions[3], 0.0001) #80
 ```
 
+
+Plot results
 ```{r}
 #Plot Hallmark pathways for tNeg and tPos
         
@@ -213,22 +221,6 @@ set.seed(42)
 ```
 
 
-
-```{r}
-common_ccp<-gsea_CommonDEGs_GO@result[gsea_CommonDEGs_GO@result$Description=="GO_CELL_CYCLE_PROCESS",]
-ControlsvCM_ccp<-gsea_ControlsvCM_GO@result[gsea_ControlsvCM_GO@result$Description=="GO_CELL_CYCLE_PROCESS",]
-
-common_genes<-unlist(as.list(strsplit(common_ccp$core_enrichment, '/')[[1]])) #all
-controlsvCM_genes<-unlist(as.list(strsplit(ControlsvCM_ccp$core_enrichment, '/')[[1]])) #41 out of 88
-
-common_counts<-CommonDEGs[rownames(CommonDEGs) %in% common_genes,]
-controlsvCM_counts<-ControlsvCMDEGs[rownames(ControlsvCMDEGs) %in% common_genes,]
-```
-
-
-
-
-
 #Gene concept plotting
 ```{r}
 DEGdf_ordered<-tNegSpecific[order(tNegSpecific$log2FoldChange, decreasing=TRUE),]
@@ -236,7 +228,8 @@ DEGlist_ordered<-DEGdf_ordered[,3]
 names(DEGlist_ordered)<-rownames(DEGdf_ordered)
 
 p1 <- cnetplot(gsea_tNegSpecific_Hallmark, foldChange=DEGlist_ordered)
-p2 <- cnetplot(gsea_tNegSpecific_Hallmark, foldChange=DEGlist_ordered, circular = TRUE, colorEdge = TRUE)
+p2 <- cnetplot(gsea_tNegSpecific_Hallmark, foldChange=DEGlist_ordered, circular = TRUE, colorEdge = TRUE,, node_label="none")
+p2.5 <- cnetplot(gsea_tNegSpecific_Hallmark, node_label="none") 
 ```
 
 #Enrichment plot mapping
@@ -246,7 +239,8 @@ p4 <- emapplot(gsea_ControlsvCM_GO, pie_scale=1.5,layout="kk")
 p5 <- emapplot(gsea_ControlsvCM_GO, pie_scale=3,layout="nicely") 
 ```
 
-No longer in use
+
+
 #Pathway analysis using fgsea
 ```{r}
 #database options I've downloaded
@@ -302,3 +296,8 @@ p<-ggplot(All_H, aes(reorder(pathway, NES), NES)) +
         labs(x="Pathway", y="Normalized Enrichment Score") + 
         theme_minimal()
 ```
+
+```{r}
+sessionInfo()
+```
+
