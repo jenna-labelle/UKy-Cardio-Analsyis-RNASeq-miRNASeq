@@ -19,6 +19,6 @@ Individual count matrices across 3 different sequence runs merged and preprocess
 **Goal:** Perform DE analysis of miRNAs to identify DE miRs and potential miRNA biomarkers of DCM- `miRNA_DEAnalysis.Rmd`. In addition, identify miRNAs with high disease association by comparing differentially expressed miRNAs to their differentially expressed mRNA targets- `Integrating_RNASeq_and_miRNASeq_DE_Results.Rmd`. Determine what pathways the targets of this subset of miRNAs act in- `Integrating_RNASeq_and_miRNASeq_DE_Results.Rmd`
 
 
-**Graphical summary of approach:**
+**Graphical summary of miRNA/mRNA integration approach:**
 
 ![miRNAApproach](miRNAMethod.PNG)
