@@ -208,14 +208,12 @@ for (i in 1:length(passingJunctions)){
 
 AllFilteredJunctions<- do.call(rbind,passingJunctions)
 
+#Print out desired metrics- Number of total filtered junctions, whether positive control junctions identifed. Used to optimize filtration settings. 
 paste(nrow(AllFilteredJunctions), "filtered junctions")
 paste(nrow(AllFilteredJunctions[AllFilteredJunctions$NormScore>0.1,]), "junctions in with Norm score>10%")
-
 paste(sum(AllFilteredJunctions[AllFilteredJunctions$geneid=="7273",20] %in% c(2,3,4,9)), "TTN junctions in S2/3/4/9")
-
 paste(sum(!(AllFilteredJunctions[AllFilteredJunctions$geneid=="7273",20] %in% c(2,3,4,9))), "TTN junctions NOT in S2/3/4/9")
 
-AllFilteredJunctions[AllFilteredJunctions$geneid=="7273",]
 ```
 
 ```{r}
