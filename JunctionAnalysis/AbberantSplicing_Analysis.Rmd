@@ -216,6 +216,7 @@ paste(sum(!(AllFilteredJunctions[AllFilteredJunctions$geneid=="7273",20] %in% c(
 
 ```
 
+#Write out to csv
 ```{r}
 settings<-paste("Settings_",CountThreshold, NControlsThreshold, DepthPercentageFilter, Percentage, nThreshold,sep="_")
 
@@ -223,94 +224,6 @@ wd<-"~/UKy/"
 write.csv(AllFilteredJunctions,paste(wd, "AllFilteredJunctions_", settings, ".csv",sep="_"))
 
 ```
-
-
-Considering this final list of filtered junctions: is there an exome variant nearby (say, within 20bp) of the "interesting" side of the junction?
-```{r}
-#Read in exome variants
-ExomeSNPs<-read.csv( "C:/Users/jenna/OneDrive/Documents/UKy/AllExomeVariants_NoFilter.csv",row.names="X")
-
-FindSNPsNearJunction<-function(Junctions, SNPs, InterestingAorB,DistanceFromJunction){
-  #remove chr1 from splice sitea/b names
-  Junctions$SpliceSiteA<- as.integer(gsub(".*:", "", Junctions$SpliceSiteA))
-  Junctions$SpliceSiteB<- as.integer(gsub(".*:", "", Junctions$SpliceSiteB))
-  
-  #Depending on whether you're looking at non-canonical A or B sites, get the start/end of the junction
-  if (InterestingAorB=="A"){
-    Sites<-Junctions[Junctions$A_Canonical=="FALSE", colnames(Junctions) %in% c("seqnames", "SpliceSiteA",
-                                                                                "geneid", "NormScore", "SampleID")]
-  } else{
-    Sites<-Junctions[Junctions$B_Canonical=="FALSE", colnames(Junctions) %in% c("seqnames", "SpliceSiteB",
-                                                                                "geneid", "NormScore", "SampleID")]
-  }
-  colnames(Sites)<-c("Site", "seqnames", "geneID","NormScore","Sample")
-  Sites$Site<-as.integer(Sites$Site)
-
- 
- #Add in a range of nt to the start/end of the site
- Sites$start<-Sites$Site-DistanceFromJunction
- Sites$end<-Sites$Site+DistanceFromJunction
-
- 
- #Remove sample 4 (for now)- no exome data rn
- Sites<-Sites[!(Sites$Sample=="4"),]
- 
- #Remove any samples from the SNP data that aren't in the Asites
- SNPs_Sites<-SNPs[SNPs$Sample %in% Sites$Sample,]
- 
- #Split exome into 1 df per sample
- SNPs_Sites<-split(SNPs_Sites, f=SNPs_Sites$Sample)
- 
- #Convert SNPs to granges
- SNPs_Sites_gr<-lapply(SNPs_Sites, function(x) {makeGRangesFromDataFrame(x[,c(1:3,7:8,11:12,13,19)],
-                                                                                     keep.extra.columns = TRUE)})
- 
- #Split junctions into 1 df per sample
- Sites<-split(Sites, f=Sites$Sample)
- 
- #convert junctions to granges object
- Sites_gr<- lapply(Sites, function(x) {makeGRangesFromDataFrame(x, keep.extra.columns = TRUE)})
- 
- #Get overlaps between junction range and exome variants, for each sample
- AllJunctionsInRange<-list()
- for (i in 1:length(Sites)){
-  site<-Sites_gr[[i]]
-  snps<-SNPs_Sites_gr[[i]]
-  JunctionsInRange<-subsetByOverlaps(site, snps)
-  AllJunctionsInRange[[i]]<-JunctionsInRangedi
-}
- 
- return(AllJunctionsInRange)
-}
-
-
-
-
-
-test<-FindSNPsNearJunction(AllFilteredJunctions, ExomeSNPs, "A", 50)
-
-jTest<-AllFilteredJunctions[AllFilteredJunctions$geneid=="7273",]
-sTest<-ExomeSNPs[ExomeSNPs$Sample==2 & ExomeSNPs$geneid=="7273",]
-
-
-
-
-
-
-
-
-
-
-
-
-
-```
-
-
-
-
-
-
 
 
 
