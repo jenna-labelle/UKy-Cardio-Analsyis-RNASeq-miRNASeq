@@ -1,9 +1,7 @@
 # Non ischemic cardiomyopathy heart tissue RNASeq/miRNASeq analysis: functional RNASeq approach
 ## University of Kentucky Biobank collaboration: WES, miRNASeq, and RNASeq analysis of non ischemic cardiomyopathy heart tissue from 18 HT patients + 5 controls
 
-**Goal:** Integrate WES and miRNASeq data with multiple RNASeq analyses (variant calling, pathogenic splice site identification, allelic imbalance, differential expression) to gain functional insight into mechanism of CM in cohort, with a particular focus on the gene TTN
-
-RNASeq and miRNASeq analysis performed here, with a focus on multiple RNASeq analysis approaches. Integrated with WES results, analyzed previously by clinical bioFX group.
+**Goal:** Integrate WES and miRNASeq data with multiple RNASeq analyses (variant calling, pathogenic splice site identification, allelic imbalance, differential expression) to gain functional insight into mechanism of CM in cohort, with a particular focus on the gene TTN. RNASeq and miRNASeq analysis performed here. 
 
 ## Overall analyses:
   1. RNASeq variant calling + comparison to WES - `Variant Analysis.Rmd`
@@ -14,7 +12,5 @@ RNASeq and miRNASeq analysis performed here, with a focus on multiple RNASeq ana
   
  ***Detailed explanation of each analysis provided in readme contained in each folder.***
  
-## Graphical summary of overall approach:
- ![OverallApproac](OverallApproach.PNG)
  
  *Note: WES analysis and filtration performed prior to RNASeq. Results incorporated into this analysis, but the WES filtration strategy not included in this repository.*
