@@ -5,7 +5,7 @@ output: html_notebook
 
 #Combining DESeq2 results from RNASeq and miRNASeq analyses
 
-Will compare miRNA targets to mRNA DEGs
+Comparing miRNA targets to mRNA DEGs
 
 Import libraries
 ```{r}
@@ -156,4 +156,7 @@ Export this file to csv
 write.csv(miRNATargets_mRNASig_mrnalogpadj_mirnalogpadj, paste(wd, "miRNA/multiMiR/multimirResults_MatureInput_log2padj.csv", sep =""))
 ```
 
+```{r}
+sessionInfo()
+```
 
