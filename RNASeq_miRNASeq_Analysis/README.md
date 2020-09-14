@@ -17,6 +17,8 @@ Essentially, trying to **stratify CM samples into two groups, with two potential
 ## miRNASeq Analysis approach:
 **Goal:** Identify potential miRNA biomarkers of DCM. In addition, identify miRNAs with high disease association by comparing differentially expressed miRNAs to their differentially expressed mRNA targets. Determine what pathways the targets of this subset of miRNAs act in.
 
+miRNA and mRNA DE results integrated in `Integrating_RNASeq_and_miRNASeq_DE_Results.Rmd`
+
 **Graphical summary of approach:**
 
 ![miRNAApproach](miRNAMethod.PNG)
