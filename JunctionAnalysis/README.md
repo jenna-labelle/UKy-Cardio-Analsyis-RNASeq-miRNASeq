@@ -1,6 +1,6 @@
 # Idenfication of potentially pathogenic splice sites
 
-Here, all junctions within CM samples are filtered to identify abberant splice sites that may be pathogenic. Junctions should be confirmed manually in IGV. For at least 3 aberrant junctions in CM samples, the splice variants that appear to cause the aberrant junctions were previously and independently identified as **potentially pathogenic in WES data**. This analysis provides a potential **functional explanation** for how these variants may cause NMD or LOF.
+Here, all junctions within CM samples are filtered to identify abberant splice sites that may be pathogenic. Junctions should be confirmed manually in IGV. For at least 3 aberrant junctions in CM samples, the splice variants that appear to cause the aberrant junctions were previously and independently identified as **potentially pathogenic in WES data**. 
 
 <br/>
 
