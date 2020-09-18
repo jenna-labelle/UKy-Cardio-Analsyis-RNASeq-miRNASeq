@@ -19,7 +19,7 @@ Individual count matrices across 3 different sequence runs merged and preprocess
 **Goal:** Use DE analysis to identify potential biomarkers and integrate DE miRs with DEGs.
 
 Two potential methods were used for generating miRNA count matrices:
-1. BaseSpace app- produces both mature and isomiR counts. IsomiR counts collapsed in ``
+1. BaseSpace app- produces both mature and isomiR counts. Files for individual samples combined in `miRNAPreprocessing_Combining_isomirSampleFiles_seqInfoIncluded_DownloadedSeparately_111419.Rmd`
 2. Command line miRDeep2, using default settings (https://github.com/rajewsky-lab/mirdeep2). Produces only mature counts. This method chosen for downstream analysis.
 
 **Steps:**
