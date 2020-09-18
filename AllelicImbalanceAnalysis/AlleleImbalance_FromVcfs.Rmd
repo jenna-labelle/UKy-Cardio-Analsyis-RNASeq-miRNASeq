@@ -490,88 +490,6 @@ SigAI_ExomeVariants<- ExomeVariants[ExomeVariants$UniqueID %in% SigAllelicExpres
 write.csv(SigAI_ExomeVariants, paste(writewd, "MERGED_ExomeVariants_CMGenes_InGeneSamplePairSigAllelicImbalance.csv", sep=""))
 ```
 
-#Test allelic expression differences for significance
-Using Dunn sig test (ANNOVA post hoc)
-
-```{r}
-#Remove indels- incorrect alignment for these variants common, don't want to calculate significance using these SNPs
-nChar<- apply(NonCMFilteredVariants, 2, nchar)[,7:8]
-AllNonCM_NoIndels<-NonCMFilteredVariants[rowSums(nChar)==2,]
-
-#Subset data- just need geneid, sample, and allelic expression
-AllNonCM_sigTest<- AllNonCM_NoIndels[,colnames(AllNonCM_NoIndels) %in% c("geneid", "AllelicExpression", "Sample")]
-
-#Rename Control-1/2/3/4/5 to control- will use all 5 controls as 1 "sample"
-for (i in 1:5){
-  sub<-paste("UK-Control-", i, sep="")
-  AllNonCM_sigTest$Sample<- gsub(sub, "Control", AllNonCM_sigTest$Sample)
-}
-
-#Convert to factor
-AllNonCM_sigTest$Sample<-as.factor(AllNonCM_sigTest$Sample)
-AllNonCM_sigTest$Sample<- ordered(AllNonCM_sigTest$Sample, levels= c("Control",1:9,11:13,15:19))
-
-#Split dataframe into a list of separate dfs for each gene
-SplitByGene<- split(AllNonCM_sigTest, f=AllNonCM_sigTest$geneid)
-
-#only keep gene if there's at least 1 variant in a non-control sample + 3 control samples
-#At least 3 variants in a control
-NControls<- unlist(lapply(SplitByGene, function(x) {
-  length(grep("Control", x$Sample))
-}))
-EnoughControls<-SplitByGene[NControls>=3]
-
-#At least 1 NonCM sample
-detach("package:plyr")
-NSamples<- lapply(EnoughControls, function(x) { x %>% filter(Sample!= "Control") %>% group_by(Sample) %>% mutate(NumberVariants=n()) %>%  filter(NumberVariants>=1) %>% as.data.frame})
-EnoughSamples<- EnoughControls[unlist(lapply(NSamples,nrow))>=1]
-
-
-#initialize empty list for appending significant gene/samples to
-SigAllelicExpression<- data.frame()
-
-#Run dunn test for all genes 
-for (i in 1:length(EnoughSamples)){
-  variants<-EnoughSamples[[i]]
-  dunn<-with(variants, posthoc.kruskal.dunn.test(x=AllelicExpression, g=Sample, p.adjust.method="none"))
-  pvalue<-as.data.frame(dunn$p.value[,1])
-  colnames(pvalue)<- "Pvalue"
-  pvalue$Sample<-rownames(pvalue)
-  pvalue$gene<- variants$geneid[1]
-  sig<-pvalue[pvalue$Pvalue<0.05,]
-  SigAllelicExpression<- rbind(SigAllelicExpression, sig)
-  
-}
-
-#Add on info about median/mean/sd of the significantly different genes, for the sig sample + across controls
-SigAllelicExpression$UniqueID<- paste(SigAllelicExpression$Sample, SigAllelicExpression$gene, sep=":")
-NonCM_MediansAll$UniqueID<- paste(NonCM_MediansAll$Sample, NonCM_MediansAll$geneid, sep=":")
-SigGenes_Medians<- NonCM_MediansAll[NonCM_MediansAll$UniqueID %in% SigAllelicExpression$UniqueID,]
-
-
-#Add in controls-mean/median/SD of allelic expression across all 5 control samples
-#can't just take mean of these metrics across the 5 samples- there's different n of variants supporting these metrics
-#Need to weight each variant equally
-AllControls_AEMetrics<- AllNonCM_sigTest[grep("Control", AllNonCM_sigTest$Sample),]
-AllControls_AEMetrics<- AllControls_AEMetrics %>% group_by(geneid) %>% mutate(Controls_MedianAllelicExpression=median(AllelicExpression),
-                                                                              Controls_MeanAllelicExpression=mean(AllelicExpression),
-                                                                              Controls_SDAllelicExpression= sd(AllelicExpression)) %>% as.data.frame
-AllControls_AEMetrics<- AllControls_AEMetrics[!(duplicated(AllControls_AEMetrics$geneid)),c(1,4:6)]
-AllControls_SigGenes<- AllControls_AEMetrics[AllControls_AEMetrics$geneid %in% SigGenes_Medians$geneid,]
-                                                                      
-#Merge sig gene Allelic expression values from NonCM samples with corresponding control values 
-ControlsandNonCM<- full_join(SigGenes_Medians, AllControls_SigGenes, by="geneid")
-
-#Merge this with significance info- pvalue from dunn test
-Sig_AndAllelicExpressionMetrics_id<- cbind(SigAllelicExpression, ControlsandNonCM, by="UniqueID")
-Sig_AndAllelicExpressionMetrics<- Sig_AndAllelicExpressionMetrics_id[,c(3,2,1,6:9,12:14)]
-
-
-#Prep for export: all the SNPs that caused the significant gene/sample pairings. Will merge this with the above table into one file manually in excel.
-AllFilteredSNPs<- do.call(rbind,EnoughSamples)
-AllFilteredSNPs$UniqueID<- paste(AllFilteredSNPs$Sample, AllFilteredSNPs$geneid,sep=":")
-AllFilteredSNPs_SigGeneSamples<- AllFilteredSNPs[AllFilteredSNPs$UniqueID %in% Sig_AndAllelicExpressionMetrics_id$UniqueID,]
-```
 
 **Export results**
 ```{r}
@@ -583,29 +501,6 @@ write.csv(Sig_AndAllelicExpressionMetrics, paste(writewd, "DunnSigTest_AllelicEx
 write.csv(AllFilteredSNPs_SigGeneSamples, paste(writewd, "RNASeqVariantsInNonCMGenes_CausingSigAllelicExpression.csv", sep=""))
 ```
 
-#For genes/sample pairs of interest (i.e., sig Allelic imbalance), get ALL EXOME VARIANTS
-
-```{r}
-NonCM_SigAllelicExpression<-SigAllelicExpression
-
-#Add sample info
-for (i in 1:length(NonCM_AllAllelicExpression_Exome)){
-  NonCM_AllAllelicExpression_Exome[[i]]$Sample<- Samples[i]
-}
-
-#Merge all exome variants together
-NonCM_ExomeVariants<- do.call(rbind, NonCM_AllAllelicExpression_Exome)
-NonCM_ExomeVariants$UniqueID<- paste(NonCM_ExomeVariants$Sample, NonCM_ExomeVariants$geneid, sep=":")
-
-#Filter exome variants- only keep variants that are found in a gene/sample pair that had sig allelic imbalance
-SigAI_ExomeVariants<- NonCM_ExomeVariants[NonCM_ExomeVariants$UniqueID %in% NonCM_SigAllelicExpression$UniqueID,]
-```
-
-**Export**
-```{r}
-#All exome variants in sig gene/sample pairs
-write.csv(SigAI_ExomeVariants, paste(writewd, "ExomeVariants_NonCMGenes_InGeneSamplePairSigAllelicImbalance.csv", sep=""))
-```
 
 
 ```{r}
