@@ -14,7 +14,7 @@ output: html_notebook
 
 Only the first analysis shows clustering of samples (both in DE heatmap and PCA)
 
-Libraries used
+**Libraries used**
 ```{r}
 suppressPackageStartupMessages(library(DESeq2))
 suppressPackageStartupMessages(library(dplyr))
@@ -26,7 +26,7 @@ suppressPackageStartupMessages(library(metaseqR))
 suppressPackageStartupMessages(library(plyr))
 ```
 
-Functions:
+**Functions:**
 ```{r}
 ContrastDGE<- function(contrasts, dds){
   ContrastsUse<- c("sampleGroup", contrasts)
@@ -123,7 +123,7 @@ Two potential data sources:
 
 2. Command line miRDeep2, defualt settings
 
-Read in data
+**Read in data**
 ```{r}
 #Data source 1- basespace files
         #Set working directory
@@ -179,7 +179,7 @@ hits<- hits[rowSums(hits)>0,]
 hits<-hits[,!(colnames(hits)=="X4")]
 ```
 
-Read in metadata, reformat
+**Read in metadata, reformat**
 ```{r}
 #Read in metadata info
 wd<- "C:/Users/Jenna/Documents/UKy_RNASeq/"
@@ -195,7 +195,7 @@ detach("package:metaseqR")
 detach("package:DESeq")
 ```
 
-Plot on PCA- need to create DESeq2 object first
+**Plot on PCA- need to create DESeq2 object first**
 ```{r}
 #Create dds object, rundeseq2
 dds<-RunDESeq2(hits, meta)
@@ -206,7 +206,7 @@ p<-MyPCA(dds, meta, 20, 14,c(Control="steelblue4", TTNpos="goldenrod2", TTNneg="
 
 Samples slightly cluster by CM status, but do NOT cluster based on TTN mutations
 
-Extract differential expression results on this DESeq2 object- tpos vs tneg vs controls
+**Extract differential expression results on this DESeq2 object- tpos vs tneg vs controls**
 ```{r}
 #Extract results
 res_tPosvControl<- ContrastDGE(c("Control", "TTNpos"), dds)
@@ -235,7 +235,7 @@ PlotHeatmap(rld, meta, topgenes,-.5,1.2,12,annotationColors)
 
 #Rerun the above analysis, comparing ALL CM vs controls
 
-Create DESeq2 object and PCA plot
+**Create DESeq2 object and PCA plot**
 ```{r}
 #Create new metadata
 meta_CMvControls<-meta
@@ -249,7 +249,7 @@ dds_CMvControls<-RunDESeq2(hits, meta_CMvControls)
 MyPCA(dds_CMvControls, meta_CMvControls, 20, 14,c(Control="steelblue4", CM="olivedrab"),-5,25,-10,20,5,"sampleGroup" )
 ```
 
-Extract differential expression results on this DESeq2 object- CM vs Controls
+**Extract differential expression results on this DESeq2 object- CM vs Controls**
 ```{r}
 #extract results
 res<- as.data.frame(results(dds_CMvControls))
@@ -263,7 +263,7 @@ miRNA_sig<-res[res$padj<0.05,] #39
 summary(results(dds))
 ```
 
-Plot Heatmap for these DE results
+**Plot Heatmap for these DE results**
 
 ```{r}
 #Normalize
@@ -280,7 +280,7 @@ annotationColors<-list(Group=c(Control="steelblue4", CM="olivedrab"))
 PlotHeatmap(rld, meta_CMvControls, topgenes,-.5,1.2,12,annotationColors)
 ```
 
-Write DE results to csv
+**Write DE results to csv**
 ```{r}
 write.csv(as.data.frame(res), paste(wd, "DESeq2/miRNADESeq2Results_matureInput.csv", sep =""))
 ```
