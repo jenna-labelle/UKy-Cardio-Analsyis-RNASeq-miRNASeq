@@ -31,6 +31,5 @@
     
     b. Use beta-binomial testing: MBASED, available in Bioconductor (`MBASED_AllelicImbalanceAnalysis.Rmd`). This approach chosen for downstream analysis. Only ASEReadCounter counts analyzed using this method.
 
-**Graphical representation of approach *(Options #1+2 for filtration, option #1 for statistical testing)*:**
-![AI](https://github.com/jenna-labelle/UKy-Cardio-Analsyis-RNASeq-miRNASeq/blob/master/VariantAnalysis/AIApproach.PNG)
+
 
