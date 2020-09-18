@@ -12,7 +12,7 @@ output: html_notebook
 4. TTN+ vs TTN-
 
 
-Import libraries:
+**Import libraries:**
 ```{r}
 suppressPackageStartupMessages(library(DESeq2))
 suppressPackageStartupMessages(library(viridis))
@@ -28,7 +28,7 @@ suppressPackageStartupMessages(library(dplyr))
 ```
 
 
-Functions
+**Functions**
 ```{r}
 #Create DESeq2 object, check that metadata is correct, and run DESeq2
 RunDESeq2<- function(counts, meta){
@@ -128,7 +128,7 @@ GetSigDEGs<- function(DEGs, sigThresh, BasemeanThresh, Log2FCThresh){
 
 
 
-Read in counts data (generated in"UKy_MergingRNACountsFilesAcross3Runs.R"), format, filter out very low counts nd "no_feature", and perform downsampling
+**Read in counts data (generated in"UKy_MergingRNACountsFilesAcross3Runs.R"), format, filter out very low counts nd "no_feature", and perform downsampling**
 ```{r}
 #Set wd
 readwd<-"C:/Users/Jenna/OneDrive/Documents/UKy_RNASeq/RawCounts/"
@@ -139,7 +139,7 @@ countsInput<- read.csv(paste(readwd, "RawCounts_Run1S10.14_Run2Controls_AllOther
 countsInput<-countsInput[,c(2:10, 19, 11:13,20,14:18, 21:25)]
 ```
 
-Remove unused samples, no_feature, na, and downsample
+**Remove unused samples, no_feature, na, and downsample**
 ```{r}
 #remove sample 10 and 14- too low of counts- and sample 4- technical replicate of sample 2
 counts<- countsInput[,!(colnames(countsInput)%in% c("X10", "X14", "X4"))]
@@ -161,7 +161,7 @@ detach("package:DESeq")
 ```
 
 
-Read in metadata, reformat
+**Read in metadata, reformat**
 ```{r}
 #Read in metadata info
 wd<- "C:/Users/Jenna/Documents/UKy_RNASeq/"
@@ -172,7 +172,7 @@ meta<- meta[!(rownames(meta) %in% c(paste("X", c(10,14,4), sep=""))),]
 ```
 
 
-Run DESeq2, comparing Controls vs all CM. Plot PCA
+#Run DESeq2, comparing Controls vs all CM. Plot PCA
 ```{r}
 #Convert metadata to CM or Controls
 meta_ControlsvCM<-meta
@@ -198,7 +198,7 @@ MyPCA(dds_ControlsvCM, meta_ControlsvCM, 27,15, c("violetred3","steelblue3"), -2
 MyPCA(dds_ControlsvCM, meta_ControlsvCM, 27,15, c("steelblue4","olivedrab"), -20,25,-30,20,5, "demo_race")
 ```
 
-Plot heatmap for Controls vs CM analysis
+**Plot heatmap for Controls vs CM analysis**
 ```{r}
 rld_ControlsVsCM<- rlog(dds_ControlsvCM)
 
@@ -230,7 +230,7 @@ PlotHeatmap(rld_ControlsVsCM,
 dds<- RunDESeq2(counts,meta)
 ```
 
-Run and plot PCA for raw and DS counts
+**Run and plot PCA for raw and DS counts**
 ```{r}
 MyPCA(dds, meta, 27,15, c("steelblue4","goldenrod2", "violetred4"), -20,25,-30,20,5, "sampleGroup")
 ```
@@ -245,9 +245,8 @@ dds_sample3<- RunDESeq2(counts,meta_sample3)
 MyPCA(dds_sample3, meta_sample3, 27,15, c("steelblue4","goldenrod2", "violetred4"), -20,25,-30,20,5, "sampleGroup")
 ```
 
-
+**Extract comparisons for 3 desired groups**
 ```{r}
-#Extract comparisons for 3 desired groups
 DGERes_controlpos<- ContrastDGE(c("TTNpos","Control"), dds)
 DGERes_controlneg<- ContrastDGE(c("TTNneg","Control"), dds)
 DGERes_posneg<- ContrastDGE(c("TTNpos","TTNneg"), dds)
@@ -257,7 +256,7 @@ nrow(DGERes_controlneg[DGERes_controlneg$padj<0.05,])
 nrow(DGERes_posneg[DGERes_posneg$padj<0.05,])
 ```
 
-#Plot heatmap
+**Plot heatmap**
 ```{r}
 #Normalize
 rld<- rlog(dds)
@@ -392,7 +391,7 @@ p<-ggplot(df, aes(x=Mean_tPos, y=Mean_tNeg))+
               axis.text.y = element_text(size=12, face="bold", color="black"))
 ```
 
-Export all DE Results
+**Export all DE Results**
 ```{r}
 wd<-"C:/Users/Jenna/OneDrive/Documents/UKy/FilesInUse/"
 
