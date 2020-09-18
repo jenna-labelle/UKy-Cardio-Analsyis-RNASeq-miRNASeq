@@ -10,14 +10,14 @@ Two potential packages/methods considered:
 
 Both use GSEA algorithm. Main difference is that clusterProfiler allows for more extensive visualization. 
 
-Libraries
+**Libraries**
 ```{r}
 suppressPackageStartupMessages(library(clusterProfiler))
 suppressPackageStartupMessages(library(fgsea))
 suppressPackageStartupMessages(library(ggplot2))
 ```
 
-Functions
+**Functions**
 ```{r}
 #Run gsea using clusterprofiler
 RunClusterProfilerGSEA<-function(DEGResults, gmtFile, pvalueThresh){
@@ -97,7 +97,7 @@ RunPlotGSEA<-function(res, gmt, nPermutations, OnlyPlotSig){
 }
 ```
 
-Read in DE results
+**Read in DE results**
 ```{r}
 wd<-"C:/Users/Jenna/OneDrive/Documents/UKy/FilesInUse/"
 
@@ -112,8 +112,9 @@ res_ControlsvCM<- read.csv(paste(wd, "DEResults_ControlsvsCM_AllGenes.csv", sep=
 
 #clusterProfiler
 
-Several databases are available to perform GSEA analysis, including the Hallmark dataset, KEGG database, and GO terms.Here, the KEGG database will be used. The clusterProfiler package is also used to perform this analysis.
+Several databases are available to perform GSEA analysis, including the Hallmark dataset, KEGG database, and GO terms.
 
+**Run GSEA analysis using all 3 databases for all 5 DEG lists**
 ```{r, include=TRUE}
 PathwayOptions<-c("h.all.v7.1.symbols.gmt",
                   "c2.cp.kegg.v7.1.symbols.gmt",
@@ -150,7 +151,7 @@ set.seed(42)
 ```
 
 
-Plot results
+**Plot results**
 ```{r}
 #Plot Hallmark pathways for tNeg and tPos
         
@@ -242,6 +243,7 @@ p5 <- emapplot(gsea_ControlsvCM_GO, pie_scale=3,layout="nicely")
 
 
 #Pathway analysis using fgsea
+No longer in use
 ```{r}
 #database options I've downloaded
 PathwayOptions<-c("h.all.v7.1.symbols.gmt",
