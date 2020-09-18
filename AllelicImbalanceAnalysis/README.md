@@ -6,6 +6,7 @@
 **Three steps:**
 
 1. Account for reference allele bias using WASP (https://github.com/bmvdgeijn/WASP)
+
     a. Split SNPs from single csv --> 1 txt file per chromosome ( `WASP/wasp_SplitSNPsByChromosome.sh` )
     
     b. Perform alignment as usual (STAR alignment using BaseSpace sequencing hub used here; default settings)
