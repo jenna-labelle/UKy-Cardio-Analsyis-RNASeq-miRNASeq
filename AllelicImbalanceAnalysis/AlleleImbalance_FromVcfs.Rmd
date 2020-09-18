@@ -8,7 +8,7 @@ output: html_notebook
 Using vcfs (BaseSpace, Isaac Variant caller) as input
 
 
-Import libraries
+**Import libraries**
 ```{r}
 suppressPackageStartupMessages(library(VariantAnnotation))
 suppressPackageStartupMessages(library(tidyr))
@@ -21,7 +21,7 @@ suppressPackageStartupMessages(library(org.Hs.eg.db))
 suppressPackageStartupMessages(library(PMCMR))
 ```
 
-Functions
+**Functions**
 ```{r}
 #read in VCF, reformat and calculate allelic expression values
 AllelicExpressionFromVCF<- function(File, GOIRanges, TotalCoverage, RefCoverage, AltCoverage, NVariantsPerGene, QualityThreshold){
@@ -317,7 +317,7 @@ Filterd variants and median gene allelic expression values exporte
   }) #down to 300 variants in each sample (on average)
 ```
 
-Recalculate median AE, add stats, merge, and prepare for exporting
+**Recalculate median AE, add stats, merge, and prepare for exporting**
 ```{r}
 #Recalculate median allelic expression values based on this new dataset of variants- need to re-filter by nVariants/gene
 RNA_Subset_AfterExome<- lapply(RNA_VariantsInExome_Alt, function(x) {x[,c(1:16,19)]})
@@ -458,7 +458,7 @@ AllFilteredSNPs_SigGeneSamples<- merge(AllFilteredSNPS_NumberVariantsPer,AllFilt
 Sig_AndAllelicExpressionMetrics<-merge(Sig_AndAllelicExpressionMetrics, AllFilteredSNPS_NumberVariantsPer[!(duplicated(AllFilteredSNPS_NumberVariantsPer)),],by="UniqueID")
 ```
 
-Export results
+**Export results**
 ```{r}
 #significant gene/sample pairings- no info on indv SNPs
 writewd<- "//Cifs2/rcdata$/UKRNASeq/VariantCalling/"
@@ -484,83 +484,11 @@ ExomeVariants$UniqueID<- paste(ExomeVariants$Sample, ExomeVariants$geneid, sep="
 SigAI_ExomeVariants<- ExomeVariants[ExomeVariants$UniqueID %in% SigAllelicExpression$UniqueID,]
 ```
 
-Export
+**Export**
 ```{r}
 #All exome variants in sig gene/sample pairs
 write.csv(SigAI_ExomeVariants, paste(writewd, "MERGED_ExomeVariants_CMGenes_InGeneSamplePairSigAllelicImbalance.csv", sep=""))
 ```
-
-
-
-#No longer in use! NonCM genes analysis combined with CM (above)
-
-##################
-#For Non CM genes#
-##################
-
-```{r}
-#Filter Step 1: exome variants
-  #Add column to all variants (in exome and RNASeq data) with unique SNP ID
-  Exome_UniqueSNPID<-lapply(NonCM_AllAllelicExpression_Exome, AddUniqueSNPID)
-  RNA_UniqueSNPID<- lapply(NonCM_AllAllelicExpression, AddUniqueSNPID)
-  
-  #Combine all variants into one list
-  Exome_ScoreSNP<- lapply(Exome_UniqueSNPID, function(x) {x[,c(9,20)]})
-  multi_full<- do.call(rbind,Exome_ScoreSNP)
-  
-  #Get just unique variants (i.e., get rid of duplicates). Keep the SNP with the highest score (for if I ever want to do extra filtering based on score)
-  Exome_AllSNPs <- multi_full[order(multi_full[,'SNPID'],-multi_full[,'Score']),]
-  Exome_AllSNPs<- Exome_AllSNPs[!duplicated(Exome_AllSNPs$SNPID),]
-  
-  #Filter RNASeq variants based on filtered exome variants
-  RNA_VariantsInExome<- lapply(RNA_UniqueSNPID, function(x) {x[x$SNPID %in% Exome_AllSNPs$SNPID,]})
-
-#Filter step 2: Alt/Ref coverage by PERCENTAGE OF TOTAL COVERAGE. This is in addition to the raw thresholds set when importing data
-  PercentThreshold<- 0.1
-  RNA_VariantsInExome_Ref<- lapply(RNA_VariantsInExome, function(x){
-    x[x$RefDepth>=round(x$Coverage*PercentThreshold),]
-  })
-  RNA_VariantsInExome_Alt<- lapply(RNA_VariantsInExome_Ref, function(x){
-    x[x$AltDepth>=round(x$Coverage*PercentThreshold),]
-  })
-
-#Recalculate median allelic expression values based on this new dataset of variants- need to re-filter by nVariants/gene
-RNA_Subset_AfterExome<- lapply(RNA_VariantsInExome_Alt, function(x) {x[,c(1:16,19)]})
-RNA_ReFilterAfterExome_NonCM<- lapply(RNA_Subset_AfterExome, NVariantsFilter_AllelicExpresion, NVariantsPerGene=3)
-
-
-#Add columns for mean allelic expression + SD Allelic Expression
-RNA_AddMean<- lapply(RNA_ReFilterAfterExome_NonCM, function(x){
-  x %>% group_by(geneid) %>% mutate(MeanAllelicExpression=mean(AllelicExpression)) %>% as.data.frame
-})
-
-RNA_AddMeanAndSD<- lapply(RNA_AddMean, function(x){
-  x %>% group_by(geneid) %>% mutate(SDAllelicExpression=sd(AllelicExpression)) %>% as.data.frame
-})
-
-#Merge filtered variants for writing to csv
-for (i in 1:length(RNA_AddMeanAndSD)){
-  RNA_AddMeanAndSD[[i]]$Sample<- RNASamples[i]
-}
-NonCMFilteredVariants<-ldply(RNA_AddMeanAndSD, data.frame)
-
-#Combine all median allelic expression values for each
-RNA_MedianFinal<- lapply(RNA_AddMeanAndSD, function(x) {x[!duplicated(x$geneid),]})
-
-#bind all median allelic expression values into 1 (keepin just SNP info + Sample + MedianAllelicExpression), then write to csv
-MediansAll<-  do.call(rbind, RNA_MedianFinal)
-NonCM_MediansAll<- MediansAll[order(MediansAll$geneid),colnames(MediansAll) %in% c("geneid","NumberVariantsPerGene", "MedianAllelicExpression", "MeanAllelicExpression", "SDAllelicExpression", "Sample")]
-```
-
-#Export results
-```{r}
-#Filtered variants
-write.csv(NonCMFilteredVariants, paste(writewd, "FinalFilteredVariants_PercentCoverageExome_AllNonCMVariants.csv",sep=""))
-
-#Median allelic expression for each gene
-write.csv(NonCM_MediansAll, paste(writewd, "NonCMGenes_MedianAllelicExpression_AllRNASeqVariants_CoveragePer.1_Total15_RefAlt1_3PerGene_FilteredByExomeQual40Total15RefAlt2.csv", sep=""))
-```
-
 
 #Test allelic expression differences for significance
 Using Dunn sig test (ANNOVA post hoc)
@@ -645,7 +573,7 @@ AllFilteredSNPs$UniqueID<- paste(AllFilteredSNPs$Sample, AllFilteredSNPs$geneid,
 AllFilteredSNPs_SigGeneSamples<- AllFilteredSNPs[AllFilteredSNPs$UniqueID %in% Sig_AndAllelicExpressionMetrics_id$UniqueID,]
 ```
 
-Export results
+**Export results**
 ```{r}
 #significant gene/sample pairings- no info on indv SNPs
 writewd<- "//Cifs2/rcdata$/UKRNASeq/VariantCalling/"
@@ -673,7 +601,7 @@ NonCM_ExomeVariants$UniqueID<- paste(NonCM_ExomeVariants$Sample, NonCM_ExomeVari
 SigAI_ExomeVariants<- NonCM_ExomeVariants[NonCM_ExomeVariants$UniqueID %in% NonCM_SigAllelicExpression$UniqueID,]
 ```
 
-Export
+**Export**
 ```{r}
 #All exome variants in sig gene/sample pairs
 write.csv(SigAI_ExomeVariants, paste(writewd, "ExomeVariants_NonCMGenes_InGeneSamplePairSigAllelicImbalance.csv", sep=""))
