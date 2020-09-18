@@ -7,7 +7,7 @@ output: html_notebook
 
 Comparing miRNA targets to mRNA DEGs
 
-Import libraries
+**Import libraries**
 ```{r}
 suppressPackageStartupMessages(library(DESeq2))
 suppressPackageStartupMessages(library(dplyr))
@@ -17,7 +17,7 @@ suppressPackageStartupMessages(library(multiMiR))
 ```
 
 
-Import DESeq2 results for Controls vs CM analysis for RNASeq and miRNASeq
+**Import DESeq2 results for Controls vs CM analysis for RNASeq and miRNASeq**
 ```{r}
 #set wd
 wd<- "//Cifs2/rcdata$/UKRNASeq/"
@@ -38,7 +38,7 @@ sigMDEGs<- na.omit(RNADESeq2Results[RNADESeq2Results$padj<0.05,])
 sigMiDEGs<- miRNADESeq2Results[miRNADESeq2Results$padj<0.05,]
 ```
 
-Determine mRNA targets of sig DE miRNAs: using multiMiR package
+**Determine mRNA targets of sig DE miRNAs: using multiMiR package**
 
 Searches through 16 databases to find all targets of input miRNAs
 ```{r}
@@ -49,7 +49,7 @@ head(multimirResults@data)
 ```
 
 
-Explore multimir data:
+**Explore multimir data:**
 ```{r}
 data<- multimirResults@data
 
@@ -100,7 +100,7 @@ That gives us 149 potentially interesting mRNAs- that is, mRNAs that are signifi
 
 Of those 149 mRNAs: which to focus on?
 
-One way to narrow down: the database that searches for miRNA/target interactions has a ranking of how "strong" the interaction is- some labeled as "weak". Looking at only the "strong":
+**One way to narrow down: the database that searches for miRNA/target interactions has a ranking of how "strong" the interaction is- some labeled as "weak". Looking at only the "strong":**
 ```{r}
 downTargets<- upmiRNATargets[UpTargetsinDownDEGs,]
 weakDownTargets<- grepl("Weak", downTargets$support_type)
@@ -117,7 +117,7 @@ length(unique(notWeakUpTargets$target_symbol))
 
 
 
-Prep these results for exporting to a file- need to combine the two sets of results and include info on the padj/log2FC of the miRNA/mRNA species
+**Prep these results for exporting to a file- need to combine the two sets of results and include info on the padj/log2FC of the miRNA/mRNA species**
 ```{r}
 #Combine up regulated miRNAs with their downregulated mRNA targets and downregulated miRNAs with their upregualted mRNA targets
 upmiRNADownmRNA<- downTargets[order(downTargets$mature_mirna_id), c(2,3,4,6,7,8)]
@@ -151,7 +151,7 @@ miRNATargets_mRNASig_mrnalogpadj_mirnalogpadj<- merge(miRNATargets_mRNASig_mrnal
 ```
 
 
-Export this file to csv
+**Export this file to csv**
 ```{r}
 write.csv(miRNATargets_mRNASig_mrnalogpadj_mirnalogpadj, paste(wd, "miRNA/multiMiR/multimirResults_MatureInput_log2padj.csv", sep =""))
 ```
