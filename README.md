@@ -4,9 +4,9 @@
 **Goal:** Integrate WES and miRNASeq data with multiple RNASeq analyses (variant calling, pathogenic splice site identification, allelic imbalance, differential expression) to gain functional insight into mechanism of CM in cohort, with a particular focus on the gene TTN. RNASeq and miRNASeq analysis performed here. 
 
 ## Overall analyses:
-  1. RNASeq variant calling + comparison to WES - `Variant Analysis.Rmd`
+  1. RNASeq variant calling - `AllelicImbalanceAnalysis.Rmd`
   2. Pathogenic splice site identification and analysis - `Junction Analysis.Rmd`
-  3. Allelic imbalance analysis - `Variant Analysis.Rmd`
+  3. Allelic imbalance analysis - `AllelicImbalanceAnalysis.Rmd`
   4. Differential expression- group comparisons informed by first 3 analyses - `RNASeq_miRNASeq_Analysis.Rmd`
   5. miRNASeq differential expression and integration with RNASeq - `RNASeq_miRNASeq_Analysis.Rmd`
   
