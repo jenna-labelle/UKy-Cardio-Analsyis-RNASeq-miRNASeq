@@ -156,7 +156,7 @@ Two potential data sources:
         rownames(counts_collapsed)<- rownames(counts_collapsed)
         
 #Data source 2- command line miRDeep2. Collapsed into 1 file in "ReofrmatingRawmiRDeep2Output.Rmd"
-                wd<-"E:/UKy/miRNA_Bams/SmallRNA_092019/"
+                wd<-"D:/UKy/miRNA_Bams/SmallRNA_092019/"
                 CLcountsInput<-read.csv(paste(wd, "AllCountsFromCL_Merged.csv",sep=""), row.names = "geneID" )
                 CLcountsInput<- CLcountsInput[,-1]
                 CLcounts<-as.data.frame(apply(CLcountsInput, 2, as.integer))
@@ -182,7 +182,7 @@ hits<-hits[,!(colnames(hits)=="X4")]
 **Read in metadata, reformat**
 ```{r}
 #Read in metadata info
-wd<- "C:/Users/Jenna/Documents/UKy_RNASeq/"
+wd<- "C:/Users/jenna/OneDrive/Documents/UKy/"
 meta<- read.csv(paste(wd, "MetaData_AllSamples.csv",sep=""))
 rownames(meta)<- meta$Sample
 meta<- meta[,-1]
@@ -282,7 +282,10 @@ PlotHeatmap(rld, meta_CMvControls, topgenes,-.5,1.2,12,annotationColors)
 
 **Write DE results to csv**
 ```{r}
-write.csv(as.data.frame(res), paste(wd, "DESeq2/miRNADESeq2Results_matureInput.csv", sep =""))
+write.csv(as.data.frame(res), paste(wd, "miRNA_DESeq2/miRNADESeq2Results_ControlsvsCM.csv", sep =""))
+write.csv(as.data.frame(res_tPosvControl),paste(wd, "miRNA_DESeq2/miRNADESeq2Results_ControlsvsTTNpos.csv", sep ="") )
+write.csv(as.data.frame(res_tNegvControl),paste(wd, "miRNA_DESeq2/miRNADESeq2Results_ControlsvsTTNneg.csv", sep ="") )
+write.csv(as.data.frame(res_tPosvtNeg),paste(wd, "miRNA_DESeq2/miRNADESeq2Results_TTNnegvsTTNpos.csv", sep ="") )
 ```
 
 
