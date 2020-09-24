@@ -131,7 +131,7 @@ GetSigDEGs<- function(DEGs, sigThresh, BasemeanThresh, Log2FCThresh){
 **Read in counts data (generated in"UKy_MergingRNACountsFilesAcross3Runs.R"), format, filter out very low counts nd "no_feature", and perform downsampling**
 ```{r}
 #Set wd
-readwd<-"C:/Users/Jenna/OneDrive/Documents/UKy_RNASeq/RawCounts/"
+readwd<-"C:/Users/jenna/OneDrive/Documents/UKy_RNASeq/RawCounts/"
 
 #read in count data, reformat
 countsInput<- read.csv(paste(readwd, "RawCounts_Run1S10.14_Run2Controls_AllOthersMerged.csv", sep =""), row.names="GeneID")
@@ -164,7 +164,7 @@ detach("package:DESeq")
 **Read in metadata, reformat**
 ```{r}
 #Read in metadata info
-wd<- "C:/Users/Jenna/Documents/UKy_RNASeq/"
+wd<- "C:/Users/jenna/OneDrive/Documents/UKy/"
 meta<- read.csv(paste(wd, "MetaData_AllSamples.csv",sep=""))
 rownames(meta)<- meta$Sample
 meta<- meta[,-1]
@@ -278,21 +278,23 @@ PlotHeatmap(rld,meta,topgenes,-.2,2.5,8, annotationColors)
 #Performing random sample permutation to show (hopefully) that our groups give the highest number of DEGs
 ```{r}
 AllN_DEGs<-list()
+AllN_Meta<-list()
 count=1
-while (count<=20){
+while (count<=10){
         #Randomly assign each sample to "pos" or "neg"
-        CMSamples<-meta[meta$sampleGroup!="control",]
+        CMSamples<-meta[meta$sampleGroup!="Control",]
         CMSamples_Random<- CMSamples
         CMSamples_Random$sampleGroup<-sample(CMSamples$sampleGroup)
         
         #merge back with control samples
-        meta_random<- rbind(CMSamples_Random, meta[meta$sampleGroup=="control",])
+        meta_random<- rbind(CMSamples_Random, meta[meta$sampleGroup=="Control",])
+        AllN_Meta[[count]]<-meta_random
         
         #Perform DE using this new metadata
         dds_random<- RunDESeq2(counts,meta_random)
         
         #Extract comparisons for pos vs neg
-        DEGs<-ContrastDGE(c("pos", "neg"), dds_random)
+        DEGs<-ContrastDGE(c("TTNpos", "TTNneg"), dds_random)
         SigDEGs<- DEGs[DEGs$padj<0.05,]
         AllN_DEGs[count]<-nrow(SigDEGs)
         
@@ -300,7 +302,20 @@ while (count<=20){
         count=count+1
 }
 
+```
 
+**Exporting Nperm results**
+```{r}
+max(unlist(AllN_DEGs))
+AllPerms<-c(AllN_DEGs, AllPerms)
+
+high_63<-AllN_Meta[[12]]
+high_44<-AllN_Meta[[17]]
+high_61<-AllN_Meta[[14]]
+high_41<-AllN_Meta[[4]]
+
+write.csv(unlist(AllPerms), paste(wd, "mRNADE_randomPermutation_092420.csv", sep=""))
+write.csv(rbind(high_41,high_44,high_61,high_63), paste(wd, "mRNADE_randomperm_Meta_41_44_61_63.csv",sep=""))
 ```
 
 
