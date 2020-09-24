@@ -126,6 +126,7 @@ GetMBASEDResults<- function(se, numsim){
   ##Get results
   results<-as.data.frame(assays(ASEresults)$pValueASE)
   results$gene<-rownames(results)
+  results$MajorAlleleFreq<-as.numeric(assays(ASEresults)$majorAlleleFrequency)
   sig_results<-results
 
   print(paste("Tested genes:", nrow(sig_results)))
@@ -144,10 +145,10 @@ txdb <- TxDb.Hsapiens.UCSC.hg19.knownGene
 genes <- genes(TxDb.Hsapiens.UCSC.hg19.knownGene)
 
 #Samples to read in
-files=c("1", "2", "3", "4", "5", "6", "7", "8", "9", "11", "12", "13", "15", "16", "17", "18", "19", paste("Control", 1:4, sep="") )
+files=c("1", "2", "3", "4", "5", "6", "7", "8", "9", "11", "12", "13", "15", "16", "17", "18", "19", paste("Control", 1:5, sep="") )
 
 #File paths to ASEReadCounter output files (already filtered by GOI)
-filepaths=paste("E:/UKy/PostWASP_AlleleCounts/", "GOIIntersect_Reformated_ASECounts_", files, ".txt", sep="")
+filepaths=paste("D:/UKy/PostWASP_AlleleCounts/", "GOIIntersect_Reformated_ASECounts_", files, ".txt", sep="")
 
 #read in filepaths, calculate allelic depth + add geneID info + coverage filters  
 mySNVs<- lapply(filepaths, AllelicExpressionFromASEReadCounter, genes, 15,2,2,3)
@@ -157,13 +158,13 @@ mySNVs<- lapply(filepaths, AllelicExpressionFromASEReadCounter, genes, 15,2,2,3)
 ```{r}
 
 #Read in for exome vcf data- CM genes
-wd<-"E:/UKy/Exome_Vcf/CMGenesROI_AllelicDepth/" #Set working directory
+wd<-"D:/UKy/Exome_Vcf/CMGenesROI_AllelicDepth/" #Set working directory
 Samples<- c(1:3,5:19) #Samples to be read in
 Files<- paste(wd, "AllelicDepth_GOIFilteredvcf_HeaderRemoved_Tube-", Samples, "-clean.snp.txt",sep="") #set file names
 CM_AllAllelicExpression_Exome<-lapply(Files, read.table)
 
 #Read in for exome vcf data- Non CM genes
-wd<-"E:/UKy/Exome_Vcf/NonCMGenesROI_AllelicDepth/" #Set working directory
+wd<-"D:/UKy/Exome_Vcf/NonCMGenesROI_AllelicDepth/" #Set working directory
 Samples<- c(1:3,5:19) #Samples to be read in
 Files<- paste(wd, "AllelicDepth_GOIFilteredvcf_HeaderRemoved_Tube-", Samples, "-clean.snp.txt",sep="") #set file names
 NonCM_AllAllelicExpression_Exome<-lapply(Files, read.table)
@@ -221,29 +222,38 @@ allSE<- lapply(RNA_VariantsInExome_Alt, ConvertToSE_MBASEDInput)
 
 #Run MBASED
 ```{r}
-set.seed(6) #option 1
-set.seed(64) #option 2
+set.seed(6) 
 
 #Run MBASED and extract results
 allMBASED<-lapply(allSE, GetMBASEDResults, 10^3)
 
+#Create data frame of all samples/genes with their majorAllele frequencies
+  allMBASED_MAF<-list()
+  for (sample in 1:length(files)){
+    df<- allMBASED[[sample]][,2:3]
+    colnames(df)<- c("gene", files[sample])
+    allMBASED_MAF[[sample]]<-df
+  }
+  
+  #Merge results into one df
+  allMAFs<- allMBASED_MAF %>% Reduce(function(dtf1,dtf2) full_join(dtf1,dtf2,by="gene"), .)
+  rownames(allMAFs)<-allMAFs$gene
+  allMAFs<-allMAFs[,!(colnames(allMAFs)=="gene")]
 
-#Add sample ID column
-allMBASED_withSample<-list()
-for (sample in 1:length(files)){
-  df<- allMBASED[[sample]]
-  colnames(df)<- c( files[sample],"gene")
-  allMBASED_withSample[[sample]]<-df
-}
+#Create data frame of all samples/genes with padj
+  allMBASED_withSample<-list()
+  for (sample in 1:length(files)){
+    df<- allMBASED[[sample]][,1:2]
+    colnames(df)<- c(files[sample], "gene")
+    allMBASED_withSample[[sample]]<-df
+  }
+  
+  #Merge results into one df
+  allResults<- allMBASED_withSample %>% Reduce(function(dtf1,dtf2) full_join(dtf1,dtf2,by="gene"), .)
+  rownames(allResults)<-allResults$gene
+  allResults<-allResults[,!(colnames(allResults)=="gene")]
 
-#Merge results into one df
-allResults<- allMBASED_withSample %>% Reduce(function(dtf1,dtf2) full_join(dtf1,dtf2,by="gene"), .)
-rownames(allResults)<-allResults$gene
-allResults<-allResults[,!(colnames(allResults)=="gene")]
-
-
-
-#write.csv(allResults, "C:/Users/jenna/OneDrive/Documents/UKy/MBASEDResults_PostWASP_ExomeFiltered.csv")
+#write.csv(allResults, "C:/Users/jenna/OneDrive/Documents/UKy/MBASEDResults_PostWASP_ExomeFiltered_AllControls.csv")
 ```
 
 #Multiple testing correction
@@ -269,7 +279,7 @@ adjusted_allResults<- adjusted_renamed %>% Reduce(function(dtf1,dtf2) full_join(
 rownames(adjusted_allResults)<-adjusted_allResults$gene
 adjusted_allResults<-adjusted_allResults[,!(colnames(adjusted_allResults)=="gene")]
 
-
+adjusted_allResults[rownames(adjusted_allResults)=="7273",]
 ```
 
 #Only keep genes that have sig AI (<0.01) in a CM sample and NO CONTROLS have sig AI (<0.01)
@@ -302,11 +312,77 @@ adjusted_allResults<-adjusted_allResults[,!(colnames(adjusted_allResults)=="gene
         #Subset all samples by controls- only keep if all controls are below sig thresh
         adjusted_NotSiginControls<-SigCM_allResults[rowSums(controls_NAReplace)==0,]
 
+#Convert ensembl ID to gene ID
+adjusted_NotSiginControls<- adjusted_NotSiginControls[!(rownames(adjusted_NotSiginControls)=="c(\"100302152\", \"100506866\", \"7273\")"),]
+rownames(adjusted_NotSiginControls)<- select(org.Hs.eg.db, rownames(adjusted_NotSiginControls), c("SYMBOL","ENTREZID"))$SYMBOL
 
 #Write to csv
-wd<-"C:/Users/Jenna/Documents/UKy_RNASeq/"
-write.csv(adjusted_NotSiginControls, paste(wd, "MBASEDResults_15X2X_Exome_10Percent_Bonf_SiginCMNotInControls.csv",sep=""))
+wd<-"C:/Users/jenna/OneDrive/Documents/UKy/"
+#write.csv(adjusted_NotSiginControls, paste(wd, "MBASEDResults_15X2X_Exome_10Percent_Bonf_SiginCMNotInControls.csv",sep=""))
 ```
+
+**Reformat results: Gene/Sample/padj/Control_padj/MAF/Control_MAF columns**
+```{r}
+SigAIReformat<-adjusted_NotSiginControls
+
+#Split into controls/CM
+SigAI_CM<-SigAIReformat[,grep("Control", colnames(SigAIReformat), invert=TRUE)]
+SigAI_Controls<-SigAIReformat[,grep("Control", colnames(SigAIReformat))]
+
+#Add column for gene ID
+SigAI_CM$GeneID<- rownames(SigAI_CM)
+
+#Melt CM df, rename columns
+SigAI_CM_melt<-na.omit(melt(SigAI_CM))
+colnames(SigAI_CM_melt)<-c("GeneID", "Sample", "Adjusted_pvalue")
+
+#Remove any gene/samples without significant AI
+SigAI_CM_sig<-SigAI_CM_melt[SigAI_CM_melt$Adjusted_pvalue<0.1,]
+
+#Calculate mean adjusted p values for Control table
+Mean_Control_padj<- as.data.frame(apply(SigAI_Controls, 1,function(x){mean(na.omit(x))}))
+colnames(Mean_Control_padj)<-"MeanControlPadj"
+Mean_Control_padj$GeneID<-rownames(Mean_Control_padj)
+
+#Merge together
+ControlCM_merged<- merge(SigAI_CM_sig, Mean_Control_padj, by="GeneID")
+
+#Add in MAF information
+  #Convert ensembl ID to gene ID
+  allMAFs<- allMAFs[grep("c", rownames(allMAFs),invert=TRUE ),]
+  rownames(allMAFs)<- select(org.Hs.eg.db, rownames(allMAFs), c("SYMBOL","ENTREZID"))$SYMBOL
+  
+  #Split MAF df into CM/controls
+  MAF_CM<- allMAFs[,grep("Control", colnames(allMAFs), invert=TRUE)]
+  MAF_Control<-allMAFs[,grep("Control", colnames(allMAFs))]
+  
+  #Melt MAF CM and add column for gene ID
+  MAF_CM$geneID<- rownames(MAF_CM)
+  MAF_CM_melt<-melt(MAF_CM)
+  colnames(MAF_CM_melt)<- c("geneID", "Sample", "MajorAlleleFreq")
+  
+  #Add column with unique ID to MAF CM and padj data frame
+  MAF_CM_melt$UniqueID<- paste(MAF_CM_melt$geneID, MAF_CM_melt$Sample, sep="_")
+  ControlCM_merged$UniqueID<-paste(ControlCM_merged$GeneID, ControlCM_merged$Sample, sep="_")
+  
+  #Merge MAF CM info using Unique ID
+  ControlCM_MAFCM<- merge(ControlCM_merged, MAF_CM_melt[,3:4], by="UniqueID")
+  
+  #Calculate median MAF for controls
+  MeanControlMAF<- as.data.frame(apply(MAF_Control,1,function(x){mean(na.omit(x))}))
+  colnames(MeanControlMAF)<-"MeanControlMajorAlleleFreq"
+  MeanControlMAF$GeneID<- rownames(MeanControlMAF)
+  
+  #Merge mean control MAF using gene ID
+  ControlCM_MAFCM_MAFControl<-merge(ControlCM_MAFCM, MeanControlMAF, by="GeneID")
+  
+```
+
+**Export results**
+```{r}
+write.csv(ControlCM_merged, paste(wd, "SigAIResults_ControlCMPadj_092320.csv",sep=""))
+```
+
 
 #Get variants in sig AI genes, export
 ```{r}
@@ -326,7 +402,7 @@ AllFilteredVariants_SigAI_merge$UniqueID<-paste(AllFilteredVariants_SigAI_merge$
                                                 AllFilteredVariants_SigAI_merge$Sample, sep=":")
 
 #Read in Sig AI results
-wd<-"C:/Users/Jenna/Documents/UKy_RNASeq/"
+wd<-"C:/Users/jenna/OneDrive/Documents/UKy/"
 AI<- read.csv(paste(wd, "MBASEDResults_15X2X_Exome_10Percent_Bonf_SiginCMNotInControls.csv",sep=""), row.names = "X")
 
 #Get unique IDs corresponding to sig AI genes
