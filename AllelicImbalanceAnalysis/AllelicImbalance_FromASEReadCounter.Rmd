@@ -98,10 +98,10 @@ genes <- genes(TxDb.Hsapiens.UCSC.hg19.knownGene)
 
 #Samples to read in
 files=c("1", "2", "3", "4", "5", "6", "7", "8", "9", "11", "12", "13", "15", "16", "17", "18", "19", 
-        paste("Control", 1:4,sep=""))
+        paste("Control", 1:5,sep=""))
 
 #File paths to ASEReadCounter output files (already filtered by GOI)
-wd<-"E:/UKy/PostWASP_AlleleCounts/"
+wd<-"D:/UKy/PostWASP_AlleleCounts/"
 filepaths=paste(wd, "GOIIntersect_Reformated_ASECounts_", files, ".txt", sep="")
 
 #read in filepaths, calculate allelic depth + add geneID info + coverage filters  
@@ -126,7 +126,7 @@ nvariantsPerGene<- 3
 #Some preliminary filtering included here: 2x Ref and Alt coverage + >= 40 qual score
 
 #Read in for exome vcf data- CM genes
-wd<-"E:/UKy/Exome_Vcf/CMGenesROI_AllelicDepth/" #Set working directory
+wd<-"D:/UKy/Exome_Vcf/CMGenesROI_AllelicDepth/" #Set working directory
 Samples<- c(1:3,5:19) #Samples to be read in
 Files<- paste(wd, "AllelicDepth_GOIFilteredvcf_HeaderRemoved_Tube-", Samples, "-clean.snp.txt",sep="") #set file names
 CM_AllAllelicExpression_Exome<-lapply(Files, read.table)
