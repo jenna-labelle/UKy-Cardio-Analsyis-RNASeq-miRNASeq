@@ -2,9 +2,12 @@
 title: "R Notebook"
 output: html_notebook
 ---
-#Perform GSEA pathway analysis on mRNA DE analysis results
+#Perform GSEA pathway analysis on:
 
-Two potential packages/methods considered:
+1. mRNA DE analysis results
+2. miRNA DE results, following integartion with mRNA DE ("Integrating_RNASeq_and_miRNASeq_DEResults.Rmd")
+
+##Two potential packages/methods considered:
 1. clusterProfiler
 2. fgsea
 
@@ -23,12 +26,11 @@ suppressPackageStartupMessages(library(ggplot2))
 RunClusterProfilerGSEA<-function(DEGResults, gmtFile, pvalueThresh){
         #Create gene list: gene ID + adjusted p value
         DEGdf<-data.frame(geneID=rownames(DEGResults), 
-                          padj=DEGResults$padj, 
-                          log2FC=DEGResults$log2FoldChange)
+                          rank=DEGResults$rank)
         
         #Order genes by log2FC and convert to list format 
-        DEGdf_ordered<-DEGdf[order(DEGdf$log2FC, decreasing=TRUE),]
-        DEGlist_ordered<-DEGdf_ordered[,3]
+        DEGdf_ordered<-DEGdf[order(DEGdf$rank, decreasing=TRUE),]
+        DEGlist_ordered<-DEGdf_ordered[,2]
         names(DEGlist_ordered)<-DEGdf_ordered$geneID
         
         #Read in desired .gmt file from clusterProfiler
@@ -42,23 +44,26 @@ RunClusterProfilerGSEA<-function(DEGResults, gmtFile, pvalueThresh){
 }
 
 #Plot GSEA results in nice bar graph- from clusterprofiler analysis
-PlotGSEABar<-function(GSEAResults, colors, yfontsize, barsize, bardistance){
-                ggplot(GSEAResults, aes(reorder(Description, NES), NES)) +
+ PlotGSEABar<-function(GSEAResults, colors, yfontsize, barsize, bardistance){
+                ggplot(GSEAResults, aes(x=Description, y=NES)) +
                 geom_bar(aes(fill=Group),width=barsize, 
                          position = position_dodge2(width = bardistance, preserve = "single"), 
                          stat = "identity") +
                 coord_flip() +
                 labs(x="Pathway", y="Normalized Enrichment Score") + 
                 scale_fill_manual(values=colors)+
-                theme_minimal()+
-                theme(axis.title.x = element_text(size=14, color="black", face="bold"),
+                theme_bw()+
+                geom_hline(yintercept=0, color="grey4",size=1)+
+                theme(axis.title.x = element_text(size=18, color="black", face="bold"),
                       axis.title.y = element_blank(),
-                      axis.text.x = element_text(size=12, color="black", face="bold"),
+                      axis.text.x = element_text(size=15, color="black", face="bold"),
                       axis.text.y = element_text(size=yfontsize, color="black", face="bold"),
                       legend.title = element_blank(),
-                      legend.text = element_text(size=yfontsize, color="black", face="bold"))
+                      legend.text = element_text(size=18, color="black", face="bold"),
+                      panel.grid.major = element_line(colour="grey", size=.75),
+                      panel.border = element_rect(colour = "black", fill=NA, size=3))
                 
-        }
+        } 
 
 
 #Run pathway analysis with gsea, plot- no longer in use
@@ -97,9 +102,11 @@ RunPlotGSEA<-function(res, gmt, nPermutations, OnlyPlotSig){
 }
 ```
 
+#Pathway Analysis for mRNA DE Results
+
 **Read in DE results**
 ```{r}
-wd<-"C:/Users/Jenna/OneDrive/Documents/UKy/FilesInUse/"
+wd<-"C:/Users/jenna/OneDrive/Documents/UKy/FilesInUse/"
 
 tPosSpecific<-read.csv(paste(wd, "DEResults_tPosSpecificSigDEGS.csv", sep=""), row.names = "X")
 tNegSpecific<-read.csv(paste(wd, "DEResults_tNegSpecificSigDEGS.csv", sep=""), row.names = "X")
@@ -108,9 +115,17 @@ DGERes_posneg<-read.csv(paste(wd, "DEResults_PosvsNeg_AllGenes.csv",sep=""), row
 res_ControlsvCM<- read.csv(paste(wd, "DEResults_ControlsvsCM_AllGenes.csv", sep=""), row.names = "X")
 ```
 
+**Calculate rank**
+```{r}
+tPosSpecific$rank<-as.numeric(gsub("FALSE", -1, gsub("TRUE", 1, tPosSpecific$log2FoldChange>0))) * -log10(tPosSpecific$padj)
+tNegSpecific$rank<-as.numeric(gsub("FALSE", -1, gsub("TRUE", 1, tNegSpecific$log2FoldChange>0))) * -log10(tNegSpecific$padj)
+CommonDEGs$rank<-as.numeric(gsub("FALSE", -1, gsub("TRUE", 1, CommonDEGs$log2FoldChange>0))) * -log10(CommonDEGs$padj)
+DGERes_posneg$rank<-as.numeric(gsub("FALSE", -1, gsub("TRUE", 1, DGERes_posneg$log2FoldChange>0))) * -log10(DGERes_posneg$padj)
+res_ControlsvCM$rank<-as.numeric(gsub("FALSE", -1, gsub("TRUE", 1, res_ControlsvCM$log2FoldChange>0))) * -log10(res_ControlsvCM$padj)
+```
 
 
-#clusterProfiler
+##clusterProfiler
 
 Several databases are available to perform GSEA analysis, including the Hallmark dataset, KEGG database, and GO terms.
 
@@ -123,13 +138,13 @@ PathwayOptions<-c("h.all.v7.1.symbols.gmt",
 #Run clusterProfiler gsea- using Hallmark, KEGG, and GO databases for tPos specific, tNeg specific, and common DEGs
 set.seed(42)
 #Tpos specific
-        gsea_tPosSpecific_Hallmark<-RunClusterProfilerGSEA(tPosSpecific, PathwayOptions[1], 0.3) #8
-        gsea_tPosSpecific_KEGG<-RunClusterProfilerGSEA(tPosSpecific, PathwayOptions[2], 0.3) #3
+        gsea_tPosSpecific_Hallmark<-RunClusterProfilerGSEA(tPosSpecific, PathwayOptions[1], 0.1) #8
+        gsea_tPosSpecific_KEGG<-RunClusterProfilerGSEA(tPosSpecific, PathwayOptions[2], 0.1) #3
         gsea_tPosSpecific_GO<-RunClusterProfilerGSEA(tPosSpecific, PathwayOptions[3], 0.01) #13
 
 #Tneg specific
-        gsea_tNegSpecific_Hallmark<-RunClusterProfilerGSEA(tNegSpecific, PathwayOptions[1], 0.1) #12
-        gsea_tNegSpecific_KEGG<-RunClusterProfilerGSEA(tNegSpecific, PathwayOptions[2], 0.1) #6
+        gsea_tNegSpecific_Hallmark<-RunClusterProfilerGSEA(tNegSpecific, PathwayOptions[1], 0.01) #12
+        gsea_tNegSpecific_KEGG<-RunClusterProfilerGSEA(tNegSpecific, PathwayOptions[2], 0.01) #6
         gsea_tNegSpecific_GO<-RunClusterProfilerGSEA(tNegSpecific, PathwayOptions[3], 0.001) #57
         
 #Common DEGs
@@ -151,78 +166,159 @@ set.seed(42)
 ```
 
 
-**Plot results**
+##Plot results
+
+**Plot Hallmark pathways**
 ```{r}
-#Plot Hallmark pathways for tNeg and tPos
-        
-        #Subset results
-        tPos_H<-gsea_tPosSpecific_Hallmark@result[,c(2,5,7)]
-        tNeg_H<-gsea_tNegSpecific_Hallmark@result[,c(2,5,7)]
-        tPosvtNeg_H<-gsea_PosvNeg_Hallmark@result[,c(2,5,7)]
-        Common_H<-gsea_CommonDEGs_Hallmark@result[,c(2,5,7)]
-        ControlsvsCM_H<-gsea_ControlsvCM_Hallmark@result[,c(2,5,7)]
-        
-        #Add column for group, bind together into 1 df
-        tPos_H$Group<-"TTNpos DEGs"
-        tNeg_H$Group<-"TTNneg DEGs"
-        tPosvtNeg_H$Group<- "tPos vs tNeg"
-        Common_H$Group<-"Common DEGs"
-        ControlsvsCM_H$Group<-"CM vs Controls"
-        All_H<-rbind(tPos_H, tNeg_H, Common_H, ControlsvsCM_H, tPosvtNeg_H)
+#Subset results
+tPos_H<-gsea_tPosSpecific_Hallmark@result[,c(2,5,7)]
+tNeg_H<-gsea_tNegSpecific_Hallmark@result[,c(2,5,7)]
+tPosvtNeg_H<-gsea_PosvNeg_Hallmark@result[,c(2,5,7)]
+Common_H<-gsea_CommonDEGs_Hallmark@result[,c(2,5,7)]
+ControlsvsCM_H<-gsea_ControlsvCM_Hallmark@result[,c(2,5,7)]
 
-        #plot results
-        gseaColors<- c("steelblue4","grey", "olivedrab", "violetred4", "goldenrod2")
-        p_hallmark<-PlotGSEABar(All_H, gseaColors, 8, 1,8)
-       
-#Plot KEGG pathways for tNeg and tPos
-        
-        #Subset results
-        tPos_K<-gsea_tPosSpecific_KEGG@result[,c(2,5,7)]
-        tNeg_K<-gsea_tNegSpecific_KEGG@result[,c(2,5,7)]
-        tPosvtNeg_K<-gsea_PosvNeg_KEGG@result[,c(2,5,7)]
-        Common_K<-gsea_CommonDEGs_KEGG@result[,c(2,5,7)]
-        ControlsvsCM_K<-gsea_ControlsvCM_KEGG@result[,c(2,5,7)]
-        
-        #Add column for group, bind together into 1 df
-        tPos_K$Group<-"TTNpos DEGs"
-        tNeg_K$Group<-"TTNneg DEGs"
-        tPosvtNeg_K$Group<- "tPos vs tNeg"
-        Common_K$Group<-"Common DEGs"
-        ControlsvsCM_K$Group<-"CM vs Controls"
-        All_K<-rbind(tPos_K, tNeg_K, Common_K, ControlsvsCM_K, tPosvtNeg_K)
-        
-        #plot results
-        p_kegg<-PlotGSEABar(All_K, gseaColors, 12,1,2)
+#Add column for group
+tPos_H$Group<-"TTNpos DEGs"
+tNeg_H$Group<-"TTNneg DEGs"
+tPosvtNeg_H$Group<- "tPos vs tNeg"
+Common_H$Group<-"Common DEGs"
+ControlsvsCM_H$Group<-"CM vs Controls"
 
-#Plot GO pathways for tNeg and tPos
-        
-        #Subset results
-        tPos_G<-gsea_tPosSpecific_GO@result[order(abs(gsea_tPosSpecific_GO@result$NES), 
-                                                  decreasing = TRUE),c(2,5,7)]
-        tNeg_G<-gsea_tNegSpecific_GO@result[order(abs(gsea_tNegSpecific_GO@result$NES), 
-                                                  decreasing = TRUE),c(2,5,7)]
-        tPosvtNeg_G<-gsea_ControlsvCM_GO@result[order(abs(gsea_tPosSpecific_GO@result$NES),
-                                                      decreasing=TRUE),c(2,5,7)]
-        Common_G<-gsea_CommonDEGs_GO@result[order(abs(gsea_tPosSpecific_GO@result$NES), 
-                                                  decreasing=TRUE),c(2,5,7)]
-        ControlsvsCM_G<-gsea_ControlsvCM_GO@result[order(abs(gsea_tPosSpecific_GO@result$NES),
-                                                         decreasing=TRUE),c(2,5,7)]
-        
-        #Add column for group, bind together into 1 df
-        tPos_G$Group<-"TTNpos DEGs"
-        tNeg_G$Group<-"TTNneg DEGs"
-        tPosvtNeg_G$Group<- "tPos vs tNeg"
-        Common_G$Group<-"Common DEGs"
-        ControlsvsCM_G$Group<-"CM vs Controls"
-        All_G<-rbind(tPos_G[1:8,], tNeg_G[1:8,], Common_G[1:8,], ControlsvsCM_G[1:8,],tPosvtNeg_G[1:8,])
-        
-        #plot results
-        p_go<-PlotGSEABar(All_G, gseaColors, 7,1,2)
+#split into 2 panels, then merge together so all descriptions are retained
+panel1_H<-rbind(Common_H, ControlsvsCM_H)
+panel2_H<-rbind(tPos_H, tNeg_H)
+all_H<-merge(panel1_H, panel2_H, by="Description",all=TRUE)
+
+#rename descriptors- remove Hallmark and "_"
+all_H$Description<- gsub("HALLMARK", "", gsub("_", " ", all_H$Description))
+
+#Convert NAs to 0
+all_H[is.na(all_H)]<-0
+
+#Convert 0s in Group to actual group- doesn't matter which one, won't be on graph
+all_H$Group.x<-gsub(0,"Common DEGs", all_H$Group.x)
+all_H$Group.y<-gsub(0, "TTNpos DEGs", all_H$Group.y)
+
+#Split back into 2 panels
+panel1_H<- all_H[,c(1:4)]
+colnames(panel1_H)<-c("Description", "NES", "p.adjust", "Group")
+panel2_H<-all_H[,c(1,5:7)]
+colnames(panel2_H)<-c("Description", "NES", "p.adjust", "Group")
+
+
+#plot results
+gseaColors_panel1<- c("steelblue4","grey")
+gseaColors_panel2<-c("goldenrod2", "violetred4")
+p_hallmark_panel1<-PlotGSEABar(panel1_H, gseaColors_panel1, 14, .8,8)
+p_hallmark_panel2<-PlotGSEABar(panel2_H, gseaColors_panel2, 14, .8,8)
+grid.arrange(p_hallmark_panel1, p_hallmark_panel2, nrow=1)
 
 ```
 
 
-#Gene concept plotting
+**Plot KEGG pathways for tNeg and tPos**
+```{r}
+#Subset results
+tPos_K<-gsea_tPosSpecific_KEGG@result[,c(2,5,7)]
+tNeg_K<-gsea_tNegSpecific_KEGG@result[,c(2,5,7)]
+tPosvtNeg_K<-gsea_PosvNeg_KEGG@result[,c(2,5,7)]
+Common_K<-gsea_CommonDEGs_KEGG@result[,c(2,5,7)]
+ControlsvsCM_K<-gsea_ControlsvCM_KEGG@result[,c(2,5,7)]
+
+#Add column for group, bind together into 1 df
+tPos_K$Group<-"TTNpos DEGs"
+tNeg_K$Group<-"TTNneg DEGs"
+tPosvtNeg_K$Group<- "tPos vs tNeg"
+Common_K$Group<-"Common DEGs"
+ControlsvsCM_K$Group<-"CM vs Controls"
+All_K<-rbind(tPos_K, tNeg_K, Common_K, ControlsvsCM_K)
+
+#split into 2 panels, then merge together so all descriptions are retained
+panel1_K<-rbind(Common_K, ControlsvsCM_K)
+panel2_K<-rbind(tPos_K, tNeg_K)
+all_K<-merge(panel1_K, panel2_K, by="Description",all=TRUE)
+
+#rename descriptors- remove KEGG and "_"
+all_K$Description<- gsub("KEGG", "", gsub("_", " ", all_K$Description))
+
+#Convert NAs to 0
+all_K[is.na(all_K)]<-0
+
+#Convert 0s in Group to actual group- doesn't matter which one, won't be on graph
+all_K$Group.x<-gsub(0,"Common DEGs", all_K$Group.x)
+all_K$Group.y<-gsub(0, "TTNpos DEGs", all_K$Group.y)
+
+#Split back into 2 panels
+panel1_K<- all_K[,c(1:4)]
+colnames(panel1_K)<-c("Description", "NES", "p.adjust", "Group")
+panel2_K<-all_K[,c(1,5:7)]
+colnames(panel2_K)<-c("Description", "NES", "p.adjust", "Group")
+
+
+#plot results
+gseaColors_panel1<- c("steelblue4","grey")
+gseaColors_panel2<-c("goldenrod2", "violetred4")
+p_kegg_panel1<-PlotGSEABar(panel1_K, gseaColors_panel1, 14, .8,8)
+p_kegg_panel2<-PlotGSEABar(panel2_K, gseaColors_panel2, 14, .8,8)
+grid.arrange(p_kegg_panel1, p_kegg_panel2, nrow=1)
+
+```
+
+
+**Plot GO pathways for tNeg and tPos**
+```{r}
+#Subset results
+tPos_G<-gsea_tPosSpecific_GO@result[order(abs(gsea_tPosSpecific_GO@result$NES), 
+                                          decreasing = TRUE),c(2,5,7)]
+tNeg_G<-gsea_tNegSpecific_GO@result[order(abs(gsea_tNegSpecific_GO@result$NES), 
+                                          decreasing = TRUE),c(2,5,7)]
+tPosvtNeg_G<-gsea_ControlsvCM_GO@result[order(abs(gsea_tPosSpecific_GO@result$NES),
+                                              decreasing=TRUE),c(2,5,7)]
+Common_G<-gsea_CommonDEGs_GO@result[order(abs(gsea_tPosSpecific_GO@result$NES), 
+                                          decreasing=TRUE),c(2,5,7)]
+ControlsvsCM_G<-gsea_ControlsvCM_GO@result[order(abs(gsea_tPosSpecific_GO@result$NES),
+                                                 decreasing=TRUE),c(2,5,7)]
+
+#Add column for group
+tPos_G$Group<-"TTNpos DEGs"
+tNeg_G$Group<-"TTNneg DEGs"
+tPosvtNeg_G$Group<- "tPos vs tNeg"
+Common_G$Group<-"Common DEGs"
+ControlsvsCM_G$Group<-"CM vs Controls"
+
+#split into 2 panels, then merge together so all descriptions are retained
+panel1_G<-rbind(Common_G[1:8,], ControlsvsCM_G[1:8,])
+panel2_G<-rbind(tPos_G[1:8,], tNeg_G[1:8,])
+all_G<-merge(panel1_G, panel2_G, by="Description",all=TRUE)
+
+#rename descriptors- remove GO and "_"
+all_G$Description<- gsub("GO", "", gsub("_", " ", all_G$Description))
+
+#Convert NAs to 0
+all_G[is.na(all_G)]<-0
+
+#Convert 0s in Group to actual group- doesn't matter which one, won't be on graph
+all_G$Group.x<-gsub(0,"Common DEGs", all_G$Group.x)
+all_G$Group.y<-gsub(0, "TTNpos DEGs", all_G$Group.y)
+
+#Split back into 2 panels
+panel1_G<- all_G[,c(1:4)]
+colnames(panel1_G)<-c("Description", "NES", "p.adjust", "Group")
+panel2_G<-all_G[,c(1,5:7)]
+colnames(panel2_G)<-c("Description", "NES", "p.adjust", "Group")
+
+
+#plot results
+gseaColors_panel1<- c("steelblue4","grey")
+gseaColors_panel2<-c("goldenrod2", "violetred4")
+p_go_panel1<-PlotGSEABar(panel1_G, gseaColors_panel1, 14, .8,8)
+p_go_panel2<-PlotGSEABar(panel2_G, gseaColors_panel2, 14, .8,8)
+grid.arrange(p_go_panel1, p_go_panel2, nrow=1)
+
+```
+
+
+##Gene concept plotting
 ```{r}
 DEGdf_ordered<-tNegSpecific[order(tNegSpecific$log2FoldChange, decreasing=TRUE),]
 DEGlist_ordered<-DEGdf_ordered[,3]
@@ -233,7 +329,7 @@ p2 <- cnetplot(gsea_tNegSpecific_Hallmark, foldChange=DEGlist_ordered, circular 
 p2.5 <- cnetplot(gsea_tNegSpecific_Hallmark, node_label="none") 
 ```
 
-#Enrichment plot mapping
+##Enrichment plot mapping
 ```{r}
 p3 <- emapplot(gsea_tNegSpecific_Hallmark, pie_scale=1.5)
 p4 <- emapplot(gsea_ControlsvCM_GO, pie_scale=1.5,layout="kk")
@@ -242,7 +338,112 @@ p5 <- emapplot(gsea_ControlsvCM_GO, pie_scale=3,layout="nicely")
 
 
 
-#Pathway analysis using fgsea
+
+#Pathway Analysis: miRNA/mRNA integration
+
+**Read in results**
+```{r}
+wd<- "//Cifs2/rcdata$/UKRNASeq/"
+miRTargets<-read.csv(paste(wd, "DESeq2_miRNA/multiMiR/multimirResults_log2padj.csv", sep =""), row.names="X")
+```
+
+**Calculate Rank and reformat**
+```{r}
+#Calculate rank value
+FCSign<- gsub("FALSE", -1, gsub("TRUE", 1, miRTargets$mRNA_log2FC>0))
+miRTargets$rank<- as.numeric(FCSign) * -log10(miRTargets$mRNA_padj)
+
+#Selected needed columns + remove duplicated targets
+GSEAInput_MiRTargets<-miRTargets[!duplicated(miRTargets$target_symbol),
+                                         colnames(miRTargets) %in% c("target_symbol", "rank")]
+
+#Rename columns
+colnames(GSEAInput_MiRTargets)<-c("geneID", "rank")
+
+#Rename rows
+rownames(GSEAInput_MiRTargets)<- GSEAInput_MiRTargets$geneID
+
+```
+
+
+**Run GSEA**
+```{r}
+PathwayOptions<-c("h.all.v7.1.symbols.gmt",
+                  "c2.cp.kegg.v7.1.symbols.gmt",
+                  "c5.all.v7.1.symbols.gmt")
+
+#Run clusterProfiler gsea- using Hallmark, KEGG, and GO databases for tPos specific, tNeg specific, and common DEGs
+set.seed(42)
+
+
+gsea_MiRTargets_Hallmark<-RunClusterProfilerGSEA(GSEAInput_MiRTargets, PathwayOptions[1], 0.05) #8
+gsea_MiRTargets_KEGG<-RunClusterProfilerGSEA(GSEAInput_MiRTargets, PathwayOptions[2], 0.05) #3
+gsea_MiRTargets_GO<-RunClusterProfilerGSEA(GSEAInput_MiRTargets, PathwayOptions[3], 0.01) #13
+
+```
+
+
+**Plot results**
+```{r}
+#Plot Hallmark pathways 
+       
+        #Subset results
+        MiRTargets_H<-gsea_MiRTargets_Hallmark@result[,c(2,5,7)]
+        ControlsvsCM_H<-gsea_ControlsvCM_Hallmark@result[,c(2,5,7)]
+        
+        #Add column for group, bind together with Controls vs CM pathways 
+        MiRTargets_H$Group<-"DE mRNA targets of DE miRs"
+        ControlsvsCM_H$Group<-"CM vs Controls"
+        All_H<-rbind(MiRTargets_H, ControlsvsCM_H)
+
+        #rename descriptors- remove Hallmark and "_"
+        All_H$Description<- gsub("HALLMARK", "", gsub("_", " ", All_H$Description))
+        
+        #plot results
+        gseaColors<- c("steelblue4", "olivedrab")
+        p_hallmark<-PlotGSEABar(All_H, gseaColors, 14, 1,8)
+       
+#Plot KEGG pathways 
+        
+        #Subset results
+        MiRTargets_K<-gsea_MiRTargets_KEGG@result[,c(2,5,7)]
+        ControlsvsCM_K<-gsea_ControlsvCM_KEGG@result[,c(2,5,7)]
+        
+        #Add column for group, bind together with Controls vs CM pathways 
+        MiRTargets_K$Group<-"DE mRNA targets of DE miRs"
+        ControlsvsCM_K$Group<-"CM vs Controls"
+        All_K<-rbind(MiRTargets_K, ControlsvsCM_K)
+        
+        #rename descriptors- remove Hallmark and "_"
+        All_K$Description<- gsub("KEGG", "", gsub("_", " ", All_K$Description))
+
+        #plot results
+        gseaColors<- c("steelblue4", "olivedrab")
+        p_KEGG<-PlotGSEABar(All_K, gseaColors, 17, 1,8)
+ 
+               
+#Plot GO pathways 
+        
+        #Subset results
+        MiRTargets_G<-gsea_MiRTargets_GO@result[,c(2,5,7)]
+        ControlsvsCM_G<-gsea_ControlsvCM_GO@result[,c(2,5,7)]
+        
+        #Add column for group, bind together with Controls vs CM pathways 
+        MiRTargets_G$Group<-"DE mRNA targets of DE miRs"
+        ControlsvsCM_G$Group<-"CM vs Controls"
+        All_G<-rbind(MiRTargets_G, ControlsvsCM_G)
+        
+        #rename descriptors- remove Hallmark and "_"
+        All_G$Description<- gsub("GO", "", gsub("_", " ", All_G$Description))
+
+        #plot results
+        gseaColors<- c("steelblue4", "olivedrab")
+        p_GO<-PlotGSEABar(All_G, gseaColors, 14, 1,8)
+       
+```
+
+
+##Pathway analysis using fgsea
 No longer in use
 ```{r}
 #database options I've downloaded
@@ -298,6 +499,8 @@ p<-ggplot(All_H, aes(reorder(pathway, NES), NES)) +
         labs(x="Pathway", y="Normalized Enrichment Score") + 
         theme_minimal()
 ```
+
+
 
 ```{r}
 sessionInfo()
