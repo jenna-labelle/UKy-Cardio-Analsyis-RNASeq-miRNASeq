@@ -23,13 +23,14 @@ suppressPackageStartupMessages(library(multiMiR))
 wd<- "//Cifs2/rcdata$/UKRNASeq/"
 
 #Read in RNASeq DESeq2 Results (CM vs Controls), format
-RNADESeq2Results<- read.csv(paste(wd, "DESeq2/Final/DGERes_ControlvsCM.csv", sep =""))
+RNADESeq2Results<- read.csv(paste(wd, "DESeq2_mRNA/DEResults_ControlsvsCM_AllGenes.csv", sep =""))
 rownames(RNADESeq2Results)<- as.character(RNADESeq2Results$X)
 RNADESeq2Results<- RNADESeq2Results[,c(2:7)]
 
 #Read in miRNASeq DESeq2 Results (CM vs Controls), format
-miRNADESeq2Results<- read.csv(paste(wd, "miRNA/DESEq2/miRNADESeq2Results_matureInput.csv", sep =""))
+miRNADESeq2Results<- read.csv(paste(wd, "DESeq2_miRNA/miRNADESeq2Results_ControlsvsCM.csv", sep =""))
 rownames(miRNADESeq2Results)<- miRNADESeq2Results$X
+
 
 #select just significantly DE mRNA
 sigMDEGs<- na.omit(RNADESeq2Results[RNADESeq2Results$padj<0.05,])
@@ -54,51 +55,49 @@ head(multimirResults@data)
 data<- multimirResults@data
 
 length(unique(data$mature_mirna_id))
-#Targets for 9 miRNA species (1 more than the input number)
-
-unique(data$mature_mirna_id)
-#hsa-miR-126-3p also has an isomir included in this list. Ignore results from this isomir?
+#Targets for all 19 miRNA species 
 
 upmiRNAs<- sigMiDEGs[sigMiDEGs$log2FoldChange>0,]
 nrow(upmiRNAs)
-#6 miRNAs up regulated in CM
+#11 miRNAs up regulated in CM
 
 downmiRNAs<- sigMiDEGs[sigMiDEGs$log2FoldChange<0,]
 nrow(downmiRNAs)
-#2 miRNAs downregulated in CM. The isomir is excluded from both of these lists- only the 8 mature inputs
+#8 miRNAs downregulated in CM
 
 upmiRNATargets<- data[data$mature_mirna_id %in% upmiRNAs$X,]
-nrow(upmiRNATargets)
-#1,018 mRNA targets of the 6 upregulated miRNAs
+length(unique(upmiRNATargets$target_symbol))
+#3,410 mRNA targets of the 11 upregulated miRNAs
 
 downmiRNATargets<- data[data$mature_mirna_id%in% downmiRNAs$X,]
-nrow(downmiRNATargets)
-#191 mRNA targets of the 2 downregulated miRNAs
+length(unique(downmiRNATargets$target_symbol))
+#6,244 mRNA targets of the 8 downregulated miRNAs
 
 downmRNAs<- sigMDEGs[sigMDEGs$log2FoldChange<0,]
 nrow(downmRNAs)
-#2,240 mRNAs downregulated in CM
+#2,532 mRNAs downregulated in CM
 
 upmRNAs<- sigMDEGs[sigMDEGs$log2FoldChange>0,]
 nrow(upmRNAs)
-#1,925 mRNAs upregulated in CM
+#1,989 mRNAs upregulated in CM
 
 UpTargetsinDownDEGs<- upmiRNATargets$target_symbol %in% rownames(downmRNAs)
 sum(UpTargetsinDownDEGs)
-#Of the 1,018 UPREGULATED miRNA targets, 124 of them are also DOWNREGULATED in the mRNA data
+#Of the 5,365 UPREGULATED miRNA targets, 775 of them are also DOWNREGULATED in the mRNA data
 
 DownTargetsinupDEGs<- downmiRNATargets$target_symbol %in% rownames(upmRNAs)
 sum(DownTargetsinupDEGs)
-#Of the 191 DOWNREGULATED miRNA targets, 25 of them are also UPREGULATED in the mRNA data
+#Of the 11,327 DOWNREGULATED miRNA targets, 1,339 of them are also UPREGULATED in the mRNA data
 ```
 
 Important takeaways:
-There are 6 upregulated miRNAs with a total of 1,018 mRNA targets between them. Of these targets, 124 of them are also downregulated in the mRNA data
-There are 2 downregulated miRNAs with a total of 191 mRNA targets between them. Of these targets, 25 of them are also upregulated in the mRNA data
+There are 11 upregulated miRNAs with a total of 5,365 mRNA targets between them. Of these targets, 1,989 of them are also downregulated in the mRNA data
 
-That gives us 149 potentially interesting mRNAs- that is, mRNAs that are significantly different in CM that may be being regulated by miRNAs that are also significantly different in CM
+There are 8 downregulated miRNAs with a total of 11,327 mRNA targets between them. Of these targets, 1,339 of them are also upregulated in the mRNA data
 
-Of those 149 mRNAs: which to focus on?
+That gives us 3,328 potentially interesting mRNAs- that is, mRNAs that are significantly different in CM that may be being regulated by miRNAs that are also significantly different in CM
+
+Of those 3,328 mRNAs: which to focus on?
 
 **One way to narrow down: the database that searches for miRNA/target interactions has a ranking of how "strong" the interaction is- some labeled as "weak". Looking at only the "strong":**
 ```{r}
@@ -106,13 +105,13 @@ downTargets<- upmiRNATargets[UpTargetsinDownDEGs,]
 weakDownTargets<- grepl("Weak", downTargets$support_type)
 notWeakDownTargets<- downTargets[!weakDownTargets,]
 length(unique(notWeakDownTargets$target_symbol))
-#16 of the 124 "interesting" downregulated mRNA targets have a STRONG support type for interacting with their upregulated miRNA
+#289 of the 1,989 "interesting" downregulated mRNA targets have a STRONG support type for interacting with their upregulated miRNA
 
 upTargets<- downmiRNATargets[DownTargetsinupDEGs,]
 weakUpTargets<- grepl("Weak", upTargets$support_type)
 notWeakUpTargets<- upTargets[!weakUpTargets,]
 length(unique(notWeakUpTargets$target_symbol))
-#5 of the 25 "interesting" upregulated mRNA targets have a STRONG support type for interacting with their downregulated miRNA
+#619 of the 1,339 "interesting" upregulated mRNA targets have a STRONG support type for interacting with their downregulated miRNA
 ```
 
 
@@ -153,7 +152,7 @@ miRNATargets_mRNASig_mrnalogpadj_mirnalogpadj<- merge(miRNATargets_mRNASig_mrnal
 
 **Export this file to csv**
 ```{r}
-write.csv(miRNATargets_mRNASig_mrnalogpadj_mirnalogpadj, paste(wd, "miRNA/multiMiR/multimirResults_MatureInput_log2padj.csv", sep =""))
+write.csv(miRNATargets_mRNASig_mrnalogpadj_mirnalogpadj, paste(wd, "DESeq2_miRNA/multiMiR/multimirResults_log2padj.csv", sep =""))
 ```
 
 ```{r}
